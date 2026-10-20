@@ -5,13 +5,15 @@ import io
 import math
 import threading
 import time
+from functools import lru_cache
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+import numpy as np
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
@@ -20,6 +22,7 @@ from litofania.contours import prepare_mask
 from litofania.generate import generate, generate_sphere
 from litofania.heightmap import FlatParams
 from litofania.shapes import SHAPES
+from litofania.textures import flat_moon
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
@@ -37,12 +40,13 @@ class LitoRequest(BaseModel):
     angulo: float = Field(120.0, ge=30, le=300)     # arco
     contorno: Literal["rectangulo", "redondeado", "circulo", "ovalo", "corazon", "propia"] = "rectangulo"   # plana
     mascara_id: str | None = None                   # plana con contorno «propia»
-    zoom: float = Field(1.0, ge=1, le=8)            # plana: encuadre de la foto dentro de la pieza
+    zoom: float = Field(1.0, ge=0.2, le=8)            # plana: encuadre de la foto dentro de la pieza
     centro_x: float = Field(0.5, ge=0, le=1)
     centro_y: float = Field(0.5, ge=0, le=1)
     diametro: float = Field(80.0, ge=30, le=210)    # cilindro, esfera y cúpula: diámetro exterior
     agujero: float = Field(40.0, ge=10, le=200)     # esfera: diámetro de la abertura de abajo
-    ajuste: Literal["centrada", "panoramica"] = "centrada"   # esfera y cúpula
+    ajuste: Literal["centrada", "panoramica", "relleno"] = "centrada"   # esfera y cúpula; «relleno» = sin foto
+    relleno: Literal["liso", "luna"] = "liso"        # plana, esfera y cúpula: lo que no tapa la foto
     cobertura: float = Field(150.0, ge=40, le=360)  # esfera y cúpula centradas: grados de ancho de la foto
     min: float = Field(0.8, ge=0.4, le=3.0)
     max: float = Field(3.0, ge=1.0, le=8.0)
@@ -139,6 +143,21 @@ def get_mask(mask_id: str) -> FileResponse:
     return FileResponse(path, media_type="image/png")
 
 
+@app.get("/api/relleno/luna.png")
+def moon_texture(ancho: int = 400, alto: int = 300) -> Response:
+    """Relleno de luna para la vista previa de la plana: el mismo que lleva el STL, a la medida pedida."""
+    if not (2 <= ancho <= 1000 and 2 <= alto <= 1000):
+        raise HTTPException(422, "Medidas fuera de rango")
+    return Response(_moon_png(ancho, alto), media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+
+
+@lru_cache(maxsize=16)
+def _moon_png(cols: int, rows: int) -> bytes:
+    buf = io.BytesIO()
+    Image.fromarray((flat_moon(rows, cols) * 255).round().astype(np.uint8)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
 @app.post("/api/litofanias")
 def make_lithophane(req: LitoRequest) -> dict:
     path = storage.image_path(req.imagen_id)
@@ -169,9 +188,10 @@ def make_lithophane(req: LitoRequest) -> dict:
 
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
-            return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura)
+            return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura,
+                                   req.relleno)
         return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno,
-                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y))
+                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), req.relleno)
 
     r = build(storage.MODELS / f"{name}.stl", p)
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
@@ -215,7 +235,7 @@ def download_model(image_id: str, shape: str) -> FileResponse:
 async def no_cache(request, call_next):
     # Que el navegador vuelva a pedir la interfaz tras actualizar la app en vez de usar una copia vieja.
     response = await call_next(request)
-    if not request.url.path.startswith("/api/"):
+    if not request.url.path.startswith("/api/") and "cache-control" not in response.headers:
         response.headers["Cache-Control"] = "no-cache"
     return response
 

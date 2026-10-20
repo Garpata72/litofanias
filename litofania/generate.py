@@ -28,14 +28,14 @@ class Result:
 
 def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana", angle_deg: float = 120.0,
              contour: str = "rectangulo", mask_path: str | None = None, zoom: float = 1.0,
-             center: tuple[float, float] = (0.5, 0.5)) -> Result:
+             center: tuple[float, float] = (0.5, 0.5), fill: str = "liso") -> Result:
     """`p.width_mm` es el ancho desarrollado: el ancho de la plana, la longitud del arco o el perímetro del cilindro.
 
     `contour` recorta la plana (corazón, círculo… o «propia» con la máscara de `mask_path`, que fija la
     proporción de la pieza); el marco sigue entonces el contorno. En la plana, `zoom` y `center` encuadran
-    la foto dentro de la pieza."""
+    la foto dentro de la pieza y `fill` rellena lo que la foto no tapa (liso o luna)."""
     wrap = shape == "cilindro"
-    framing = {"zoom": zoom, "center": center} if shape == "plana" else {}
+    framing = {"zoom": zoom, "center": center, "fill": fill} if shape == "plana" else {}
     if shape == "plana" and contour != "rectangulo":
         no_frame = replace(p, border_mm=0)
         aspect = None
@@ -58,13 +58,14 @@ def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana"
 
 
 def generate_sphere(image_path: str, out_path: str, p: FlatParams, shape: str, diameter_mm: float,
-                    hole_mm: float = 40.0, fit: str = "centrada", coverage_deg: float = 150.0) -> Result:
+                    hole_mm: float = 40.0, fit: str = "centrada", coverage_deg: float = 150.0,
+                    fill: str = "liso") -> Result:
     """Esfera con abertura abajo o cúpula (media esfera). `diameter_mm` es el diámetro exterior."""
     radius = diameter_mm / 2
     lat_top, lat_bottom = sphere_lats(radius, shape, hole_mm, p.mm_per_px)
     cols = max(16, round(2 * math.pi * radius / p.mm_per_px))
     rows = max(4, round(radius * (lat_top - lat_bottom) / p.mm_per_px) + 1)
-    gray = sphere_gray(image_path, p, cols, rows, lat_top, lat_bottom, fit, coverage_deg)
+    gray = sphere_gray(image_path, p, cols, rows, lat_top, lat_bottom, fit, coverage_deg, fill)
     t = p.min_mm + (1.0 - gray) * (p.max_mm - p.min_mm)
     s = build_sphere(t, radius, lat_top, lat_bottom)
     write_stl(out_path, s.verts, s.faces)

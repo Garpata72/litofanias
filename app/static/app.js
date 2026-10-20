@@ -41,10 +41,10 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relleno", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
-  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150,
+  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relleno: "liso",
   min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
@@ -75,7 +75,8 @@ function showShapeFields() {
   const forma = $("#forma").value;
   const ajuste = $("#ajuste").value;
   $$("[data-shapes]").forEach((el) => {
-    el.hidden = !el.dataset.shapes.split(" ").includes(forma) || (el.dataset.fit && el.dataset.fit !== ajuste)
+    el.hidden = !el.dataset.shapes.split(" ").includes(forma)
+      || (el.dataset.fit && SPHERE.includes(forma) && !el.dataset.fit.split(" ").includes(ajuste))
       || (el.dataset.contour && el.dataset.contour !== $("#contorno").value);
   });
 }
@@ -153,8 +154,11 @@ async function uploadMask(file) {
   } catch (e) { toast(e.message, "err"); }
 }
 
+const ZOOM = { min: 0.25, max: 4 };
+
 /* ───────── Encuadre ─────────
-   Mismo cálculo que crop_window en litofania/heightmap.py: si se cambia uno, cambiar el otro. */
+   Mismo cálculo que crop_window en litofania/heightmap.py: si se cambia uno, cambiar el otro. El centro
+   es el punto de la foto que cae en el centro de la pieza; con zoom menor que 1 la foto es más pequeña que la pieza. */
 function pieceAspect(p) {
   return customMask(p) && maskMeta() ? maskMeta().ancho / maskMeta().alto : current.ancho / current.alto;
 }
@@ -164,16 +168,12 @@ function cropWindow(p) {
   const a = pieceAspect(p), z = frame.zoom;
   let w, h;
   if (W / H > a) { h = H / z; w = h * a; } else { w = W / z; h = w / a; }
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  return { x: clamp(frame.cx * W - w / 2, 0, W - w), y: clamp(frame.cy * H - h / 2, 0, H - h), w, h };
+  return { x: frame.cx * W - w / 2, y: frame.cy * H - h / 2, w, h };
 }
 function setFrame(f, save = true) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   frame = { ...frame, ...f };
-  if (source.naturalWidth) {   // deja el centro donde de verdad queda tras no salirse de la foto
-    const win = cropWindow(readParams());
-    frame.cx = (win.x + win.w / 2) / source.naturalWidth;
-    frame.cy = (win.y + win.h / 2) / source.naturalHeight;
-  }
+  frame = { zoom: clamp(frame.zoom, ZOOM.min, ZOOM.max), cx: clamp(frame.cx, 0, 1), cy: clamp(frame.cy, 0, 1) };
   $("#zoom").value = frame.zoom;
   showSliderValues();
   if (save && current) store.set(`encuadre.${current.id}`, frame);
@@ -291,53 +291,104 @@ function draw() {
   const border = SPHERE.includes(p.forma) || cut ? 0 : p.marco;
   const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * border));
   const win = cropWindow(p);
-  const scale = PREVIEW_MAX / Math.max(win.w, win.h);
-  const w = Math.max(2, Math.round(win.w * Math.min(scale, flat ? 4 : 1)));
-  const h = Math.max(2, Math.round(win.h * Math.min(scale, flat ? 4 : 1)));
+  const scale = Math.min(PREVIEW_MAX / Math.max(win.w, win.h), flat ? 4 : 1);
+  const w = Math.max(2, Math.round(win.w * scale));
+  const h = Math.max(2, Math.round(win.h * scale));
   const pad = Math.round((border / inner) * w);
   const padX = wrap ? 0 : pad;
   const mask = cut ? shapeMask(p, h, w) : null;
   const band = cut ? erode(mask, h, w, Math.round((p.marco / Math.max(5, p.ancho)) * w)) : null;
-  drawFrame(p, win, w, h, mask, band);
+  const fill = flat ? fillLayer(p, w, h) : null;
+  drawFrame(p, win, w, h, mask, band, fill);
+
+  // Capa de la foto (transparente donde no llega) y gris del relleno debajo.
+  const k = w / win.w;
+  const layer = document.createElement("canvas");
+  layer.width = w;
+  layer.height = h;
+  const lctx = layer.getContext("2d", { willReadFrequently: true });
+  lctx.drawImage(source, -win.x * k, -win.y * k, source.naturalWidth * k, source.naturalHeight * k);
+  const d = lctx.getImageData(0, 0, w, h).data;
+  const bg = fill ? fillGray(fill, w, h) : null;
+
+  const mean = sourceMean(p.brillo);
+  const tMin = Math.exp(-ABSORB * p.min);
+  const light = (t) => Math.exp(-ABSORB * t) / tMin;
 
   const cv = $("#cvLit");
   cv.width = w + 2 * padX;
   cv.height = h + 2 * pad;
-  const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(source, win.x, win.y, win.w, win.h, padX, pad, w, h);
-  const img = ctx.getImageData(padX, pad, w, h);
-  const d = img.data;
-
-  const gray = new Float32Array(w * h);
-  let sum = 0;
-  for (let i = 0, j = 0; j < gray.length; i += 4, j++) {
-    const g = Math.min(255, (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) * p.brillo);
-    gray[j] = g;
-    sum += g;
-  }
-  const mean = Math.round(sum / gray.length);
-  const tMin = Math.exp(-ABSORB * p.min);
-  const light = (t) => Math.exp(-ABSORB * t) / tMin;
-
-  for (let i = 0, j = 0; j < gray.length; i += 4, j++) {
-    let g = Math.min(255, Math.max(0, mean + (gray[j] - mean) * p.contraste)) / 255;
-    if (p.gamma !== 1) g = g ** p.gamma;
-    if (p.invertir) g = 1 - g;
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(w, h);
+  const o = img.data;
+  for (let i = 0, j = 0; j < w * h; i += 4, j++) {
+    const a = d[i + 3] / 255;
+    let g = bg ? bg[j] : 0;
+    if (a > 0) {
+      const raw = Math.min(255, (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) * p.brillo);
+      let gp = Math.min(255, Math.max(0, mean + (raw - mean) * p.contraste)) / 255;
+      if (p.gamma !== 1) gp = gp ** p.gamma;
+      if (p.invertir) gp = 1 - gp;
+      g = a * gp + (1 - a) * g;
+    }
     const L = light(p.min + (1 - g) * (p.max - p.min));
-    d[i] = 255 * L; d[i + 1] = 222 * L; d[i + 2] = 170 * L; d[i + 3] = 255;
+    o[i] = 255 * L; o[i + 1] = 222 * L; o[i + 2] = 170 * L; o[i + 3] = 255;
   }
   const edge = light(p.max);
-  ctx.fillStyle = `rgb(${255 * edge},${222 * edge},${170 * edge})`;
-  ctx.fillRect(0, 0, cv.width, cv.height);
   if (cut) {
-    for (let k = 0; k < mask.length; k++) {
-      const i = 4 * k;
-      if (!mask[k]) d[i + 3] = 0;
-      else if (!band[k]) { d[i] = 255 * edge; d[i + 1] = 222 * edge; d[i + 2] = 170 * edge; }
+    for (let j = 0; j < mask.length; j++) {
+      const i = 4 * j;
+      if (!mask[j]) o[i + 3] = 0;
+      else if (!band[j]) { o[i] = 255 * edge; o[i + 1] = 222 * edge; o[i + 2] = 170 * edge; }
     }
-    ctx.clearRect(0, 0, cv.width, cv.height);
+  } else {
+    ctx.fillStyle = `rgb(${255 * edge},${222 * edge},${170 * edge})`;
+    ctx.fillRect(0, 0, cv.width, cv.height);
   }
   ctx.putImageData(img, padX, pad);
+}
+
+/* Media de gris de la foto entera tras el brillo, como hace Pillow con el contraste. */
+let statsFor = null, statsGray = null;
+function sourceMean(brillo) {
+  if (statsFor !== source.src) {
+    const c = document.createElement("canvas");
+    const s = Math.min(1, 128 / Math.max(source.naturalWidth, source.naturalHeight));
+    c.width = Math.max(1, Math.round(source.naturalWidth * s));
+    c.height = Math.max(1, Math.round(source.naturalHeight * s));
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, c.width, c.height);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    statsGray = new Float32Array(d.length / 4);
+    for (let i = 0, j = 0; j < statsGray.length; i += 4, j++) statsGray[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    statsFor = source.src;
+  }
+  let sum = 0;
+  for (const g of statsGray) sum += Math.min(255, g * brillo);
+  return Math.round(sum / statsGray.length);
+}
+
+/* Relleno de lo que la foto no tapa: liso (gris fijo) o la luna que genera el servidor, la misma del STL. */
+const PLAIN = 0.85;   // como textures.PLAIN
+const moonImg = new Image();
+moonImg.addEventListener("load", () => queueDraw());
+function fillLayer(p, w, h) {
+  if (p.relleno !== "luna") return { kind: "liso" };
+  const url = `/api/relleno/luna.png?ancho=${w}&alto=${h}`;
+  if (!moonImg.src.endsWith(url)) moonImg.src = url;
+  return moonImg.complete && moonImg.naturalWidth === w && moonImg.naturalHeight === h ? { kind: "luna", img: moonImg } : { kind: "liso" };
+}
+function fillGray(fill, w, h) {
+  const g = new Float32Array(w * h);
+  if (fill.kind !== "luna") return g.fill(PLAIN);
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(fill.img, 0, 0);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  for (let j = 0; j < g.length; j++) g[j] = d[4 * j] / 255;
+  return g;
 }
 
 /* Máscara de la pieza en la rejilla de la vista previa: un contorno de fórmula o la máscara subida. */
@@ -354,29 +405,51 @@ function shapeMask(p, rows, cols) {
   return m;
 }
 
-/* Primera vista: la foto tal y como entra en la pieza. En la plana se puede arrastrar y hacer zoom;
-   lo que queda fuera del contorno se oscurece y la franja del marco se marca en ámbar. */
-function drawFrame(p, win, w, h, mask, band) {
+/* Primera vista: la pieza con la foto colocada y un margen alrededor donde se ve, atenuada, la parte de la
+   foto que se queda fuera. En la plana se arrastra y se hace zoom; lo que queda fuera del contorno se
+   oscurece y la franja del marco se marca en ámbar. */
+let frameGeom = { w: 1, total: 1 };
+function drawFrame(p, win, w, h, mask, band, fill) {
   const flat = p.forma === "plana";
   const cv = $("#cvFrame");
   cv.classList.toggle("movable", flat);
   $("#capFrame").textContent = flat ? "Encuadre (arrastra la foto)" : "Original";
-  cv.width = w;
-  cv.height = h;
+  const M = flat ? Math.round(0.2 * Math.max(w, h)) : 0;
+  cv.width = w + 2 * M;
+  cv.height = h + 2 * M;
+  frameGeom = { w, total: w + 2 * M };
   const ctx = cv.getContext("2d");
-  ctx.drawImage(source, win.x, win.y, win.w, win.h, 0, 0, w, h);
+  ctx.fillStyle = "#0e1116";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  if (fill) {
+    if (fill.kind === "luna") ctx.drawImage(fill.img, M, M, w, h);
+    else { ctx.fillStyle = `rgb(${255 * PLAIN},${255 * PLAIN},${255 * PLAIN})`; ctx.fillRect(M, M, w, h); }
+  }
+  const k = w / win.w;
+  ctx.drawImage(source, M - win.x * k, M - win.y * k, source.naturalWidth * k, source.naturalHeight * k);
+  if (!flat) return;
+
+  // Fuera de la pieza: la foto se ve atenuada.
+  ctx.fillStyle = "rgba(14, 17, 22, 0.7)";
+  ctx.fillRect(0, 0, cv.width, M);
+  ctx.fillRect(0, M + h, cv.width, M);
+  ctx.fillRect(0, M, M, h);
+  ctx.fillRect(M + w, M, M, h);
+  ctx.strokeStyle = "rgba(251, 191, 36, 0.8)";
+  ctx.setLineDash([6, 4]);
+  ctx.strokeRect(M - 0.5, M - 0.5, w + 1, h + 1);
   if (!mask) return;
   const over = new ImageData(w, h);
-  for (let k = 0; k < mask.length; k++) {
-    const i = 4 * k;
-    if (!mask[k]) { over.data[i] = 16; over.data[i + 1] = 19; over.data[i + 2] = 24; over.data[i + 3] = 215; }
-    else if (!band[k]) { over.data[i] = 251; over.data[i + 1] = 191; over.data[i + 2] = 36; over.data[i + 3] = 120; }
+  for (let j = 0; j < mask.length; j++) {
+    const i = 4 * j;
+    if (!mask[j]) { over.data[i] = 14; over.data[i + 1] = 17; over.data[i + 2] = 22; over.data[i + 3] = 200; }
+    else if (!band[j]) { over.data[i] = 251; over.data[i + 1] = 191; over.data[i + 2] = 36; over.data[i + 3] = 120; }
   }
   const tmp = document.createElement("canvas");
   tmp.width = w;
   tmp.height = h;
   tmp.getContext("2d").putImageData(over, 0, 0);
-  ctx.drawImage(tmp, 0, 0);
+  ctx.drawImage(tmp, M, M);
 }
 
 function updateSummary(p, ok) {
@@ -489,7 +562,7 @@ cvFrame.addEventListener("pointerdown", (e) => {
 cvFrame.addEventListener("pointermove", (e) => {
   if (!dragFrom) return;
   const win = cropWindow(readParams());
-  const k = win.w / cvFrame.clientWidth;   // píxeles de la foto por píxel de pantalla
+  const k = win.w / (cvFrame.clientWidth * frameGeom.w / frameGeom.total);   // píxeles de foto por píxel de pantalla
   setFrame({
     cx: dragFrom.cx - ((e.clientX - dragFrom.x) * k) / source.naturalWidth,
     cy: dragFrom.cy - ((e.clientY - dragFrom.y) * k) / source.naturalHeight,
@@ -501,7 +574,7 @@ cvFrame.addEventListener("pointercancel", endDrag);
 cvFrame.addEventListener("wheel", (e) => {
   if (!current || readParams().forma !== "plana") return;
   e.preventDefault();
-  setFrame({ zoom: Math.min(4, Math.max(1, frame.zoom * Math.exp(-e.deltaY * 0.0015))) });
+  setFrame({ zoom: frame.zoom * Math.exp(-e.deltaY * 0.0015) });
 }, { passive: false });
 cvFrame.addEventListener("dblclick", () => { if (current) setFrame({ zoom: 1, cx: 0.5, cy: 0.5 }); });
 

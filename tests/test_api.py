@@ -107,3 +107,12 @@ def test_custom_mask_upload_and_generate(client):
     blank = io.BytesIO()
     Image.new("L", (30, 30), 255).save(blank, format="PNG")
     assert client.post("/api/mascaras", files={"archivo": ("b.png", blank.getvalue(), "image/png")}).status_code == 400
+
+
+def test_moon_fill(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
+    r = client.get("/api/relleno/luna.png?ancho=80&alto=50")
+    assert r.status_code == 200 and Image.open(io.BytesIO(r.content)).size == (80, 50)
+    for body in ({"forma": "esfera", "relleno": "luna", "ajuste": "relleno", "agujero": 20}, {"forma": "plana", "relleno": "luna", "zoom": 0.6}):
+        info = client.post("/api/litofanias", json={"imagen_id": meta["id"], "diametro": 40, "ancho": 40, "resolucion": 0.8, **body})
+        assert info.status_code == 200, info.text

@@ -69,8 +69,8 @@
         <p class="hint">Silueta negra sobre blanco (o al revés), o un PNG con transparencia. La pieza toma su forma y su proporción.</p>
       </div>
       <label class="slider" data-shapes="plana"><span>Zoom de la foto</span><output data-for="zoom"></output>
-        <input id="zoom" type="range" min="1" max="4" step="0.05" value="1"></label>
-      <p class="hint" data-shapes="plana">Arrastra la foto en la vista «Encuadre» para colocarla; doble clic la centra.</p>
+        <input id="zoom" type="range" min="0.25" max="4" step="0.05" value="1"></label>
+      <p class="hint" data-shapes="plana">Arrastra la foto en la vista «Encuadre» para colocarla y usa la rueda para acercarla o alejarla; doble clic la centra. Con zoom menor que 1 la foto queda más pequeña que la pieza.</p>
       <label class="num" data-shapes="plana arco"><span>Ancho total</span><input id="ancho" type="number" min="20" max="400" step="1" value="150"><i>mm</i></label>
       <label class="num" data-shapes="arco"><span>Ángulo del arco</span><input id="angulo" type="number" min="30" max="300" step="5" value="120"><i>grados</i></label>
       <label class="num" data-shapes="cilindro esfera cupula"><span>Diámetro exterior</span><input id="diametro" type="number" min="30" max="210" step="1" value="80"><i>mm</i></label>
@@ -79,8 +79,14 @@
         <select id="ajuste" aria-label="Cómo se coloca la foto">
           <option value="centrada">Centrada delante</option>
           <option value="panoramica">Panorámica (toda la esfera)</option>
+          <option value="relleno">Sin foto (solo relleno)</option>
         </select></label>
       <label class="num" data-shapes="esfera cupula" data-fit="centrada"><span>Ancho de la foto</span><input id="cobertura" type="number" min="40" max="360" step="10" value="150"><i>grados</i></label>
+      <label class="fsel" data-shapes="plana esfera cupula" data-fit="centrada relleno"><span>Relleno</span>
+        <select id="relleno" aria-label="Relleno de lo que no tapa la foto">
+          <option value="liso">Liso</option>
+          <option value="luna">Luna (cráteres)</option>
+        </select></label>
       <label class="num"><span>Grosor mínimo</span><input id="min" type="number" min="0.4" max="3" step="0.1" value="0.8"><i>mm</i></label>
       <label class="num"><span>Grosor máximo</span><input id="max" type="number" min="1" max="8" step="0.1" value="3"><i>mm</i></label>
       <label class="num"><span>Resolución</span><input id="resolucion" type="number" min="0.05" max="1" step="0.05" value="0.2"><i>mm/px</i></label>

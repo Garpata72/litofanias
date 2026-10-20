@@ -117,6 +117,21 @@ def test_custom_mask_with_hole_and_framing(tmp_path):
                   zoom=2.0, center=(0.0, 0.5))
     assert abs(r1.width_mm - r1.height_mm) < 1   # la pieza toma la proporción de la máscara
 
-    # Encuadre: zoom 2 a la izquierda del todo coge la mitad izquierda de la altura disponible.
-    assert crop_window(90, 60, 1.0, 2.0, (0.0, 0.5)) == (0.0, 15.0, 30.0, 30.0)
+    # Encuadre: el centro pedido cae en el centro de la pieza, aunque el trozo se salga de la foto.
+    assert crop_window(90, 60, 1.0, 2.0, (0.0, 0.5)) == (-15.0, 15.0, 30.0, 30.0)
     assert crop_window(90, 60, 1.5) == (0.0, 0.0, 90.0, 60.0)
+    assert crop_window(90, 60, 1.5, 0.5) == (-45.0, -30.0, 180.0, 120.0)
+
+
+def test_small_photo_sits_on_the_fill(tmp_path):
+    from litofania.textures import PLAIN
+
+    photo = tmp_path / "negra.png"
+    Image.new("L", (60, 40), 0).save(photo)
+    p = FlatParams(width_mm=40, mm_per_px=0.5, border_mm=0)
+    g = load_gray(str(photo), p, zoom=0.5)
+    rows, cols = g.shape
+    assert abs(g[0, 0] - PLAIN) < 1e-9 and g[rows // 2, cols // 2] == 0.0    # foto en el centro, relleno alrededor
+    assert 0 < g[rows // 2, cols // 4] < PLAIN                                # fundido en el borde de la foto
+    moon = load_gray(str(photo), p, zoom=0.5, fill="luna")
+    assert moon[rows // 2, cols // 2] == 0.0 and moon[:3].std() > 0.01         # alrededor, textura y no liso
