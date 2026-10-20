@@ -5,20 +5,24 @@ import io
 import math
 import threading
 import time
+from functools import lru_cache
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+import numpy as np
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from app import storage
-from litofania.generate import generate
+from litofania.contours import prepare_mask
+from litofania.generate import generate, generate_sphere
 from litofania.heightmap import FlatParams
 from litofania.shapes import SHAPES
+from litofania.textures import flat_moon
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
@@ -31,10 +35,19 @@ SERVER = None  # lo pone run.py para poder cerrar la app desde el botón de apag
 
 class LitoRequest(BaseModel):
     imagen_id: str
-    forma: Literal["plana", "arco", "cilindro"] = "plana"
+    forma: Literal["plana", "arco", "cilindro", "esfera", "cupula"] = "plana"
     ancho: float = Field(150.0, ge=20, le=400)      # plana y arco: ancho desarrollado
     angulo: float = Field(120.0, ge=30, le=300)     # arco
-    diametro: float = Field(80.0, ge=30, le=210)    # cilindro: diámetro exterior
+    contorno: Literal["rectangulo", "redondeado", "circulo", "ovalo", "corazon", "propia"] = "rectangulo"   # plana
+    mascara_id: str | None = None                   # plana con contorno «propia»
+    zoom: float = Field(1.0, ge=0.2, le=8)            # plana: encuadre de la foto dentro de la pieza
+    centro_x: float = Field(0.5, ge=0, le=1)
+    centro_y: float = Field(0.5, ge=0, le=1)
+    diametro: float = Field(80.0, ge=30, le=210)    # cilindro, esfera y cúpula: diámetro exterior
+    agujero: float = Field(40.0, ge=10, le=200)     # esfera: diámetro de la abertura de abajo
+    ajuste: Literal["centrada", "panoramica", "relleno"] = "centrada"   # esfera y cúpula; «relleno» = sin foto
+    relleno: Literal["liso", "luna"] = "liso"        # plana, esfera y cúpula: lo que no tapa la foto
+    cobertura: float = Field(150.0, ge=40, le=360)  # esfera y cúpula centradas: grados de ancho de la foto
     min: float = Field(0.8, ge=0.4, le=3.0)
     max: float = Field(3.0, ge=1.0, le=8.0)
     resolucion: float = Field(0.2, ge=0.05, le=1.0)
@@ -58,17 +71,21 @@ def shutdown() -> dict:
     return {"ok": True}
 
 
-@app.post("/api/imagenes")
-async def upload_image(archivo: UploadFile) -> dict:
+async def _read_image(archivo: UploadFile) -> tuple[bytes, Image.Image]:
     data = await archivo.read()
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "La imagen supera los 40 MB")
     try:
         img = Image.open(io.BytesIO(data))
         img.verify()
-        img = Image.open(io.BytesIO(data))
+        return data, Image.open(io.BytesIO(data))
     except (UnidentifiedImageError, OSError):
         raise HTTPException(400, "El archivo no es una imagen válida")
+
+
+@app.post("/api/imagenes")
+async def upload_image(archivo: UploadFile) -> dict:
+    data, img = await _read_image(archivo)
 
     image_id = storage.new_id()
     ext = (img.format or "png").lower().replace("jpeg", "jpg")
@@ -97,6 +114,50 @@ def get_image(image_id: str) -> FileResponse:
     return FileResponse(path)
 
 
+@app.post("/api/mascaras")
+async def upload_mask(archivo: UploadFile) -> dict:
+    """Máscara propia para recortar la plana: una silueta (oscura sobre claro, clara sobre oscuro o PNG con transparencia)."""
+    _, img = await _read_image(archivo)
+    try:
+        mask = prepare_mask(img)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    mask_id = storage.new_id()
+    mask.save(storage.MASKS / f"{mask_id}.png")
+    meta = {"id": mask_id, "nombre": archivo.filename or "mascara.png", "ancho": mask.width, "alto": mask.height,
+            "creada": time.time()}
+    storage.save_mask_meta(mask_id, meta)
+    return meta
+
+
+@app.get("/api/mascaras")
+def list_masks() -> list[dict]:
+    return storage.list_masks()
+
+
+@app.get("/api/mascaras/{mask_id}/archivo")
+def get_mask(mask_id: str) -> FileResponse:
+    path = storage.mask_path(mask_id)
+    if path is None:
+        raise HTTPException(404, "Máscara no encontrada")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.get("/api/relleno/luna.png")
+def moon_texture(ancho: int = 400, alto: int = 300) -> Response:
+    """Relleno de luna para la vista previa de la plana: el mismo que lleva el STL, a la medida pedida."""
+    if not (2 <= ancho <= 1000 and 2 <= alto <= 1000):
+        raise HTTPException(422, "Medidas fuera de rango")
+    return Response(_moon_png(ancho, alto), media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+
+
+@lru_cache(maxsize=16)
+def _moon_png(cols: int, rows: int) -> bytes:
+    buf = io.BytesIO()
+    Image.fromarray((flat_moon(rows, cols) * 255).round().astype(np.uint8)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
 @app.post("/api/litofanias")
 def make_lithophane(req: LitoRequest) -> dict:
     path = storage.image_path(req.imagen_id)
@@ -104,11 +165,19 @@ def make_lithophane(req: LitoRequest) -> dict:
         raise HTTPException(404, "Imagen no encontrada")
     if req.min >= req.max:
         raise HTTPException(422, "El grosor mínimo debe ser menor que el máximo")
-    width = math.pi * req.diametro if req.forma == "cilindro" else req.ancho
-    if req.forma != "cilindro" and width <= 2 * req.marco + 5:
+    round_shape = req.forma in ("cilindro", "esfera", "cupula")
+    width = math.pi * req.diametro if round_shape else req.ancho
+    if not round_shape and width <= 2 * req.marco + 5:
         raise HTTPException(422, "El marco es demasiado ancho para ese tamaño")
-    if req.forma == "cilindro" and req.diametro <= 2 * req.max + 10:
+    if round_shape and req.diametro <= 2 * req.max + 10:
         raise HTTPException(422, "El diámetro es demasiado pequeño para ese grosor")
+    if req.forma == "esfera" and req.agujero >= req.diametro - 10:
+        raise HTTPException(422, "La abertura debe ser al menos 10 mm menor que el diámetro")
+    mask = None
+    if req.forma == "plana" and req.contorno == "propia":
+        mask = storage.mask_path(req.mascara_id or "")
+        if mask is None:
+            raise HTTPException(422, "Elige o sube una máscara para el contorno propio")
 
     p = FlatParams(
         width_mm=width, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
@@ -116,11 +185,18 @@ def make_lithophane(req: LitoRequest) -> dict:
         gamma=req.gamma, invert=req.invertir,
     )
     name = f"{req.imagen_id}-{req.forma}"
-    r = generate(str(path), str(storage.MODELS / f"{name}.stl"), p, req.forma, req.angulo)
 
+    def build(out: Path, params: FlatParams):
+        if req.forma in ("esfera", "cupula"):
+            return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura,
+                                   req.relleno)
+        return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno,
+                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), req.relleno)
+
+    r = build(storage.MODELS / f"{name}.stl", p)
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
     preview_res = max(p.mm_per_px, math.sqrt(4 * width * (r.height_mm or width) / PREVIEW_TRIANGLES))
-    generate(str(path), str(storage.MODELS / f"{name}-vista.stl"), replace(p, mm_per_px=preview_res), req.forma, req.angulo)
+    build(storage.MODELS / f"{name}-vista.stl", replace(p, mm_per_px=preview_res))
 
     base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
     return {
@@ -153,6 +229,15 @@ def download_model(image_id: str, shape: str) -> FileResponse:
     meta = storage.get_meta(image_id) or {}
     name = Path(meta.get("nombre", image_id)).stem
     return FileResponse(_model_path(image_id, shape), media_type="model/stl", filename=f"litofania-{shape}-{name}.stl")
+
+
+@app.middleware("http")
+async def no_cache(request, call_next):
+    # Que el navegador vuelva a pedir la interfaz tras actualizar la app en vez de usar una copia vieja.
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/") and "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

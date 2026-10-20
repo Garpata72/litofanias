@@ -106,6 +106,10 @@ body.side-hidden #side { display: none; }
 }
 .num input:focus, .fsel select:focus { border-color: var(--amber); outline: 0; }
 .num input.bad { border-color: var(--coral); }
+.maskbox { display: flex; flex-direction: column; gap: .4rem; }
+.maskbox .thumbs { padding: 0; }
+.maskbox .thumbs button { background-size: contain; background-color: #000; }
+.maskbox .btn { align-self: flex-start; }
 .hint { margin: .2rem 0 0; color: var(--mute); font-size: .78rem; }
 
 /* ───────── Zona principal ───────── */
@@ -120,6 +124,8 @@ body.side-hidden #side { display: none; }
   background: var(--bed-2); border: 1px solid var(--line-soft);
 }
 .stage img, .stage canvas { max-width: 100%; max-height: calc(100vh - 14rem); display: block; }
+.stage canvas.movable { cursor: grab; touch-action: none; }
+.stage canvas.movable:active { cursor: grabbing; }
 .stage.lit { background: radial-gradient(ellipse at center, rgba(251, 191, 36, .08), transparent 70%), var(--bed-2); }
 .stage.lit canvas { box-shadow: 0 0 40px rgba(251, 191, 36, .25); }
 

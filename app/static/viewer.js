@@ -50,8 +50,10 @@ const litMat = new THREE.ShaderMaterial({
       if (radial > 0.5) {
         // Pieza curva con eje en x = y = 0 (coordenadas del archivo). La cara exterior lisa se deja
         // ver a través y se ilumina la interior, cuyo radio da el grosor en cada punto.
-        float dist = length(vLocal.xy);
-        float inward = dot(normalize(vLocalN), vec3(-vLocal.xy / max(dist, 1e-4), 0.0));
+        // radial = 1: eje vertical (arco y cilindro); radial = 2: centro de la esfera.
+        vec3 rad = radial > 1.5 ? vLocal : vec3(vLocal.xy, 0.0);
+        float dist = length(rad);
+        float inward = dot(normalize(vLocalN), -rad / max(dist, 1e-4));
         if (inward < -0.3) discard;
         if (inward < 0.3) { gl_FragColor = vec4(warm * 0.06, 1.0); return; }
         float tr = rOut - dist;
@@ -115,7 +117,7 @@ function clear() {
 }
 
 /* Centra la pieza, deja la cara trasera en su sitio y calcula el grosor mínimo de la cara iluminada. */
-function place(obj, radius) {
+function place(obj, radius, sphere) {
   if (radius) {
     // Las curvas se generan de pie con la altura en z y la cara convexa hacia +y: se giran para
     // tener la altura hacia arriba y la cara convexa mirando a la cámara.
@@ -147,8 +149,9 @@ function place(obj, radius) {
       if (radius) {
         n.fromBufferAttribute(nor, i);
         p.fromBufferAttribute(pos, i);
-        const r = Math.hypot(p.x, p.y);
-        if ((-n.x * p.x - n.y * p.y) / r > 0.5) tMin = Math.min(tMin, radius - r);
+        const r = sphere ? p.length() : Math.hypot(p.x, p.y);
+        const inward = sphere ? -n.dot(p) / r : (-n.x * p.x - n.y * p.y) / r;
+        if (inward > 0.5) tMin = Math.min(tMin, radius - r);
         continue;
       }
       n.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
@@ -157,7 +160,7 @@ function place(obj, radius) {
       tMin = Math.min(tMin, p.z - zBack);
     }
   });
-  litMat.uniforms.radial.value = radius ? 1 : 0;
+  litMat.uniforms.radial.value = radius ? (sphere ? 2 : 1) : 0;
   litMat.uniforms.rOut.value = radius || 0;
   litMat.uniforms.zBack.value = zBack;
   litMat.uniforms.tMin.value = Number.isFinite(tMin) ? tMin : 0.8;
@@ -189,7 +192,7 @@ async function open(opts) {
     if (current !== opts) return;   // se abrió otro mientras cargaba
     root = obj;
     scene.add(root);
-    const { size, triangles } = place(root, opts.radius);
+    const { size, triangles } = place(root, opts.radius, opts.sphere);
     if (!opts.details) {
       const f = (v) => v.toLocaleString("es-ES", { maximumFractionDigits: 1 });
       $("#lbInfo").textContent = `${f(size.x)} × ${f(size.y)} × ${f(size.z)} mm · ${Math.round(triangles).toLocaleString("es-ES")} triángulos`;
