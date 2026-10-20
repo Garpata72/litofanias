@@ -32,6 +32,18 @@
     <div class="sidehead"><span>Imágenes</span></div>
     <div id="images" class="thumbs"></div>
 
+    <div class="sidehead"><span>Varias fotos en una pieza</span></div>
+    <div class="fields">
+      <label class="check"><input id="collage" type="checkbox"> Usar varias fotos (collage)</label>
+      <div class="maskbox" data-collage>
+        <div id="collageList" class="thumbs"></div>
+        <button id="btnCollageAdd" class="btn small" type="button" title="Añadir al collage la foto que tienes abierta"><span data-icon="plus"></span> Añadir la foto abierta</button>
+        <p class="hint">Van en este orden, fila a fila (en el cilindro y la esfera, la primera delante). Toca una para abrirla y encuadrarla en su hueco; la × la quita. Todas toman la proporción de la primera.</p>
+        <label class="num" data-shapes="plana"><span>Filas</span><input id="collage_filas" type="number" min="1" max="4" step="1" value="1"><i></i></label>
+        <label class="num"><span>Separación entre fotos</span><input id="separacion" type="number" min="0" max="20" step="0.5" value="2"><i>mm</i></label>
+      </div>
+    </div>
+
     <div class="sidehead"><span>Ajustes de imagen</span><button id="btnReset" class="iconbtn" data-icon="refresh" title="Volver a los valores iniciales" aria-label="Restablecer ajustes"></button></div>
     <div class="fields">
       <label class="slider"><span>Brillo</span><output data-for="brillo"></output>
@@ -65,8 +77,17 @@
           <option value="circulo">Círculo</option>
           <option value="ovalo">Óvalo</option>
           <option value="corazon">Corazón</option>
+          <option value="estrella">Estrella</option>
+          <option value="poligono">Polígono</option>
           <option value="propia">Máscara propia…</option>
         </select></label>
+      <label class="num" data-shapes="plana" data-contour="estrella"><span>Puntas</span><input id="puntas" type="number" min="3" max="20" step="1" value="5"><i></i></label>
+      <label class="num" data-shapes="plana" data-contour="estrella" title="Lo hondo de los valles entre puntas: menos, puntas más finas"><span>Radio interior</span><input id="interior" type="number" min="20" max="90" step="5" value="50"><i>%</i></label>
+      <label class="num" data-shapes="plana" data-contour="poligono"><span>Lados</span><input id="lados" type="number" min="3" max="12" step="1" value="6"><i></i></label>
+      <label class="num" data-shapes="plana" data-contour="corazon" title="Corta la punta de abajo para que el corazón se pegue mejor a la cama al imprimirlo de pie"><span>Base plana</span><input id="base_plana" type="number" min="0" max="40" step="5" value="0"><i>%</i></label>
+      <label class="check" data-shapes="plana"><input id="colgar" type="checkbox"> Pestaña con agujero para colgar</label>
+      <label class="num" data-shapes="plana" data-hang><span>Ancho de la pestaña</span><input id="colgar_ancho" type="number" min="8" max="40" step="1" value="14"><i>mm</i></label>
+      <label class="num" data-shapes="plana" data-hang><span>Agujero</span><input id="colgar_agujero" type="number" min="2" max="30" step="0.5" value="5"><i>mm</i></label>
       <div class="maskbox" data-shapes="plana" data-contour="propia">
         <div id="masks" class="thumbs"></div>
         <button id="btnMask" class="btn small" type="button" title="Subir una silueta para recortar la pieza"><span data-icon="upload"></span> Subir máscara</button>

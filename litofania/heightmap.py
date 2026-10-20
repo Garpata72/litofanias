@@ -101,6 +101,13 @@ def place_photo(img: Image.Image, p: FlatParams, cols: int, rows: int, x: float,
     return gray
 
 
+def image_cols(p: FlatParams, wrap: bool = False) -> int:
+    """Columnas de la rejilla de la foto: el ancho sin el marco; el cilindro da la vuelta completa, sin marco a los lados."""
+    if wrap:
+        return max(8, round(p.width_mm / p.mm_per_px))
+    return max(2, round((p.width_mm - 2 * p.border_mm) / p.mm_per_px) + 1)
+
+
 def load_gray(path: str, p: FlatParams, wrap: bool = False, aspect: float | None = None,
               zoom: float = 1.0, center: tuple[float, float] = (0.5, 0.5), fill="liso") -> np.ndarray:
     """Carga la imagen, aplica ajustes básicos y la escala a la resolución de impresión.
@@ -111,10 +118,7 @@ def load_gray(path: str, p: FlatParams, wrap: bool = False, aspect: float | None
     from litofania.textures import flat_fill
 
     img = _adjusted(path, p)
-    if wrap:   # cilindro: la imagen da la vuelta completa, sin marco en los lados
-        cols = max(8, round(p.width_mm / p.mm_per_px))
-    else:
-        cols = max(2, round((p.width_mm - 2 * p.border_mm) / p.mm_per_px) + 1)
+    cols = image_cols(p, wrap)
     if aspect is None and zoom == 1.0 and tuple(center) == (0.5, 0.5):
         rows = max(2, round(cols * img.height / img.width))
         return _finish(img.resize((cols, rows), Image.LANCZOS), p)
@@ -125,33 +129,58 @@ def load_gray(path: str, p: FlatParams, wrap: bool = False, aspect: float | None
 
 
 def sphere_gray(path: str, p: FlatParams, cols: int, rows: int, lat_top: float, lat_bottom: float,
-                fit: str = "centrada", coverage_deg: float = 150.0, fill="liso") -> np.ndarray:
+                fit: str = "centrada", coverage_deg: float = 150.0, fill="liso", photos=None,
+                sep_mm: float = 2.0) -> np.ndarray:
     """Rejilla de grises (rows × cols) que cubre la esfera: longitudes completas, latitudes de arriba abajo.
 
     «panoramica» estira la imagen a toda la esfera (ideal para fotos 2:1). «centrada» coloca la foto
     delante, en el ecuador, ocupando `coverage_deg` grados de ancho y manteniendo su proporción; el
     resto lleva el relleno `fill` (liso, luna o textura, ver textures.py). «relleno» deja solo el relleno, sin foto.
+
+    Con varias fotos (`photos`, ver collage.py) van una al lado de otra: en «centrada» se reparten los
+    `coverage_deg` grados con la proporción de la primera; en «panoramica» dan la vuelta entera, a todo el alto.
     """
     from litofania.textures import sphere_fill
 
-    img = _adjusted(path, p)
-    if fit == "panoramica":
-        return _finish(img.resize((cols, rows), Image.LANCZOS), p)
+    if fit == "panoramica" and not photos:
+        return _finish(_adjusted(path, p).resize((cols, rows), Image.LANCZOS), p)
 
     lats = np.linspace(lat_top, lat_bottom, rows)
     lons = 2 * np.pi * np.arange(cols) / cols - np.pi        # como en shapes.build_sphere
     background = sphere_fill(fill, lats, lons, cols * p.mm_per_px / (2 * np.pi))
     if fit == "relleno":
         return background
+    if photos:
+        from litofania.collage import first_aspect, layout, paint
+
+        sep = sep_mm / p.mm_per_px
+        if fit == "panoramica":
+            _, slots = layout(len(photos), cols, 1, sep, True, rows=rows)
+            return paint(background, photos, p, slots, True)
+        w = max(2, min(cols, round(cols * coverage_deg / 360)))
+        h, slots = layout(len(photos), w, 1, sep, False, first_aspect(photos, p))
+        if h > rows:
+            h, slots = layout(len(photos), w, 1, sep, False, rows=rows)
+        r0 = _sphere_row(rows, h, lat_top, lat_bottom)
+        c0 = (cols - w) // 2
+        paint(background[r0:r0 + h, c0:c0 + w], photos, p, slots, False)
+        return background
+
+    img = _adjusted(path, p)
 
     w = max(2, min(cols, round(cols * coverage_deg / 360)))
     h = max(2, min(rows, round(w * img.height / img.width)))
-    # Fila del ecuador: las filas van de lat_top a lat_bottom en pasos iguales.
-    eq = round((lat_top / (lat_top - lat_bottom)) * (rows - 1)) if lat_bottom < 0 else rows - 1 - h // 2
-    r0 = int(np.clip(eq - h // 2, 0, rows - h))
+    r0 = _sphere_row(rows, h, lat_top, lat_bottom)
     c0 = (cols - w) // 2
     k = img.width / w                                     # píxeles de foto por celda
     return place_photo(img, p, cols, rows, -c0 * k, -r0 * k, cols * k, background)
+
+
+def _sphere_row(rows: int, h: int, lat_top: float, lat_bottom: float) -> int:
+    """Primera fila de una foto de `h` filas centrada en el ecuador (en la cúpula, apoyada abajo)."""
+    # Fila del ecuador: las filas van de lat_top a lat_bottom en pasos iguales.
+    eq = round((lat_top / (lat_top - lat_bottom)) * (rows - 1)) if lat_bottom < 0 else rows - 1 - h // 2
+    return int(np.clip(eq - h // 2, 0, rows - h))
 
 
 def thickness_map(gray: np.ndarray, p: FlatParams, wrap: bool = False) -> np.ndarray:
