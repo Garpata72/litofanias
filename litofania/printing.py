@@ -6,7 +6,7 @@ BED = (220.0, 220.0, 240.0)
 PLA_DENSITY = 1.24          # g/cm³
 ACCESSORY_FILL = 0.45       # paredes + 15 % de relleno: fracción aproximada del volumen macizo
 
-NAMES = {"plana": "plana", "arco": "arco", "cilindro": "cilindro", "esfera": "esfera", "cupula": "cúpula"}
+NAMES = {"plana": "plana", "arco": "arco", "cilindro": "cilindro", "cono": "lámpara cónica", "esfera": "esfera", "cupula": "cúpula"}
 
 ORIENTATION = {
     "plana": [
@@ -21,6 +21,11 @@ ORIENTATION = {
     "cilindro": [
         "Imprímelo de pie, tal como sale del STL.",
         "Borde de adherencia (brim) de 5 mm si es alto y estrecho.",
+    ],
+    "cono": [
+        "Imprímela de pie, tal como sale del STL (la boca ancha o la estrecha abajo, según la hayas diseñado).",
+        "Si la pared se inclina más de 30° hacia fuera, baja la velocidad de las paredes a 30 mm/s.",
+        "Borde de adherencia (brim) de 5 mm.",
     ],
     "esfera": [
         "Imprímela con la abertura hacia abajo, apoyada en la cama, tal como sale del STL.",
