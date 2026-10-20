@@ -7,9 +7,8 @@ from __future__ import annotations
 import argparse
 import time
 
-from litofania.flat import flat_mesh
-from litofania.heightmap import FlatParams, load_gray, thickness_map
-from litofania.stl import write_stl
+from litofania.generate import generate_flat
+from litofania.heightmap import FlatParams
 
 
 def main() -> None:
@@ -33,13 +32,9 @@ def main() -> None:
         gamma=a.gamma, invert=a.invertir,
     )
     t0 = time.perf_counter()
-    t = thickness_map(load_gray(a.imagen, p), p)
-    verts, faces = flat_mesh(t, p.mm_per_px)
-    write_stl(a.salida, verts, faces)
-    h_mm = (t.shape[0] - 1) * p.mm_per_px
-    w_mm = (t.shape[1] - 1) * p.mm_per_px
-    print(f"{a.salida}: {w_mm:.1f} x {h_mm:.1f} x {p.max_mm:.1f} mm, "
-          f"{len(faces):,} triángulos, {time.perf_counter() - t0:.1f} s")
+    r = generate_flat(a.imagen, a.salida, p)
+    print(f"{a.salida}: {r.width_mm:.1f} x {r.height_mm:.1f} x {r.depth_mm:.1f} mm, "
+          f"{r.triangles:,} triángulos, {time.perf_counter() - t0:.1f} s")
 
 
 if __name__ == "__main__":
