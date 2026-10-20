@@ -134,3 +134,27 @@ def test_text_settings_and_presets(client):
     assert client.get("/api/plantillas").json() == [{"nombre": "Regalo", "ajustes": {"forma": "plana", "ancho": 120}}]
     assert client.delete("/api/plantillas/Regalo").status_code == 200
     assert client.get("/api/plantillas").json() == []
+
+
+def _closed(stl: bytes) -> bool:
+    n = int.from_bytes(stl[80:84], "little")
+    tri = np.frombuffer(stl[84:], dtype=np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")]), count=n)["v"]
+    pts, idx = np.unique(tri.reshape(-1, 3), axis=0, return_inverse=True)
+    f = idx.reshape(-1, 3)
+    e = np.sort(np.vstack([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]), axis=1)
+    return bool((np.unique(e, axis=0, return_counts=True)[1] == 2).all())
+
+
+def test_accessories(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "ancho": 60, "diametro": 50, "agujero": 30, "resolucion": 0.8, "marco": 3}
+    assert client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "plana"}).status_code == 404
+    for forma, extra in [("plana", {}), ("plana", {"contorno": "corazon"}), ("arco", {}), ("cilindro", {}),
+                         ("esfera", {}), ("cupula", {})]:
+        lito = client.post("/api/litofanias", json={**base, "forma": forma, **extra}).json()
+        info = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": forma}).json()
+        stl = client.get(info["stl"]).content
+        assert _closed(stl), forma
+        if forma == "plana":   # la caja es algo más grande que la litofanía
+            assert lito["medidas_mm"][0] < info["medidas_mm"][0] < lito["medidas_mm"][0] + 8
+        assert "LED USB" in client.get(info["ajustes"]).text

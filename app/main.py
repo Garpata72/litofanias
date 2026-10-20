@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 import threading
 import time
@@ -23,7 +24,9 @@ from litofania.generate import generate, generate_sphere
 from litofania.heightmap import FlatParams
 from litofania import printing
 from litofania import text as engraving
-from litofania.shapes import SHAPES
+from litofania import accessories
+from litofania.shapes import SHAPES, signed_volume
+from litofania.stl import write_stl
 from litofania.textures import flat_moon
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -206,6 +209,11 @@ def make_lithophane(req: LitoRequest) -> dict:
     size = (r.width_mm, r.height_mm, r.depth_mm)
     (storage.MODELS / f"{name}-ajustes.txt").write_text(
         printing.settings(req.forma, size, p.min_mm, p.max_mm, r.volume_mm3), encoding="utf-8")
+    # Lo que necesita la caja de luz o la base de esta pieza.
+    (storage.MODELS / f"{name}.json").write_text(json.dumps({
+        "forma": req.forma, "medidas_mm": size, "grosor_max": p.max_mm, "marco": req.marco,
+        "radio_mm": r.radius_mm, "angulo": req.angulo, "agujero": req.agujero, "contorno": r.outline,
+    }), encoding="utf-8")
 
     base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
     return {
@@ -219,6 +227,51 @@ def make_lithophane(req: LitoRequest) -> dict:
         "gramos": round(printing.grams(r.volume_mm3)),
         "ajustes": f"{base}-ajustes.txt",
     }
+
+
+class AccessoryRequest(BaseModel):
+    imagen_id: str
+    forma: Literal["plana", "arco", "cilindro", "esfera", "cupula"]
+    fondo: float = Field(30.0, ge=10, le=80)        # caja de luz: fondo de la cámara para la luz
+    alto: float = Field(25.0, ge=12, le=60)         # bases: altura
+    holgura: float = Field(0.4, ge=0.1, le=1.0)
+
+
+@app.post("/api/accesorios")
+def make_accessory(req: AccessoryRequest) -> dict:
+    """Caja de luz o base para la última litofanía generada con esta imagen y forma."""
+    meta_path = storage.MODELS / f"{req.imagen_id}-{req.forma}.json"
+    if not req.imagen_id.isalnum() or not meta_path.exists():
+        raise HTTPException(404, "Genera primero la litofanía")
+    m = json.loads(meta_path.read_text(encoding="utf-8"))
+    w, h, _ = m["medidas_mm"]
+    t, c = m["grosor_max"], req.holgura
+    if req.forma == "plana":
+        a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"))
+    elif req.forma == "arco":
+        a = accessories.arc_base(m["radio_mm"], m["angulo"], t, req.alto, c)
+    elif req.forma == "esfera":
+        a = accessories.sphere_stand(m["agujero"], req.alto, c)
+    else:
+        a = accessories.round_base(m["radio_mm"], t, req.alto, c, req.forma)
+    name = f"{req.imagen_id}-{req.forma}"
+    write_stl(str(storage.MODELS / f"{name}-accesorio.stl"), a.verts, a.faces)
+    (storage.MODELS / f"{name}-accesorio-ajustes.txt").write_text(
+        printing.accessory_settings(a.notes, a.size_mm, accessories_grams(a)), encoding="utf-8")
+    base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
+    return {
+        "nombre": {"caja": "Caja de luz", "base": "Base", "peana": "Peana"}[a.name],
+        "stl": f"{base}-accesorio.stl",
+        "vista": f"{base}-accesorio.stl?v={time.time_ns()}",
+        "medidas_mm": [round(v, 1) for v in a.size_mm],
+        "triangulos": len(a.faces),
+        "gramos": round(accessories_grams(a)),
+        "ajustes": f"{base}-accesorio-ajustes.txt",
+    }
+
+
+def accessories_grams(a) -> float:
+    return printing.grams(signed_volume(a.verts, a.faces)) * printing.ACCESSORY_FILL
 
 
 @app.post("/api/litofanias/plana")
@@ -239,13 +292,17 @@ def download_model(image_id: str, shape: str) -> FileResponse:
         return FileResponse(_model_path(image_id, shape.removesuffix("-vista"), "-vista"), media_type="model/stl")
     meta = storage.get_meta(image_id) or {}
     name = Path(meta.get("nombre", image_id)).stem
+    if shape.endswith("-accesorio"):
+        shape = shape.removesuffix("-accesorio")
+        return FileResponse(_model_path(image_id, shape, "-accesorio"), media_type="model/stl",
+                            filename=f"accesorio-{shape}-{name}.stl")
     return FileResponse(_model_path(image_id, shape), media_type="model/stl", filename=f"litofania-{shape}-{name}.stl")
 
 
 @app.get("/api/litofanias/{image_id}/{shape}-ajustes.txt")
 def download_settings(image_id: str, shape: str) -> FileResponse:
     path = storage.MODELS / f"{image_id}-{shape}-ajustes.txt"
-    if not image_id.isalnum() or shape not in SHAPES or not path.exists():
+    if not image_id.isalnum() or shape.removesuffix("-accesorio") not in SHAPES or not path.exists():
         raise HTTPException(404, "Todavía no se ha generado esa litofanía")
     meta = storage.get_meta(image_id) or {}
     name = Path(meta.get("nombre", image_id)).stem

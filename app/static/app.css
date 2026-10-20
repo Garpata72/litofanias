@@ -117,6 +117,7 @@ body.side-hidden #side { display: none; }
 .presets select:focus, .textfield input:focus { border-color: var(--amber); outline: 0; }
 .presets .iconbtn { width: 1.9rem; height: 1.9rem; }
 .textfield { display: grid; gap: .3rem; font-size: .88rem; }
+.fields > .btn { justify-content: center; }
 .hint { margin: .2rem 0 0; color: var(--mute); font-size: .78rem; }
 
 /* ───────── Zona principal ───────── */

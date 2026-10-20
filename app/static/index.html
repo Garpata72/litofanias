@@ -100,6 +100,15 @@
       <label class="num" data-shapes="plana arco cilindro"><span>Marco</span><input id="marco" type="number" min="0" max="20" step="0.5" value="3"><i>mm</i></label>
       <p class="hint">Valores pensados para una Ender 3 V3 KE con boquilla de 0,4 mm.</p>
     </div>
+
+    <div class="sidehead"><span>Caja de luz y soporte</span></div>
+    <div class="fields">
+      <label class="num" data-shapes="plana"><span>Fondo para la luz</span><input id="acc_fondo" type="number" min="10" max="80" step="1" value="30"><i>mm</i></label>
+      <label class="num" data-shapes="arco cilindro esfera cupula"><span>Alto de la base</span><input id="acc_alto" type="number" min="12" max="60" step="1" value="25"><i>mm</i></label>
+      <label class="num"><span>Holgura del encaje</span><input id="acc_holgura" type="number" min="0.1" max="1" step="0.05" value="0.4"><i>mm</i></label>
+      <button id="btnAcc" class="btn" type="button" disabled><span data-icon="lamp"></span> <span id="accLabel">Generar caja de luz</span></button>
+      <p class="hint">Con hueco para una luz LED USB de 5 V y paso para el cable. Se ajusta a la última litofanía generada.</p>
+    </div>
   </aside>
   <div id="scrim"></div>
 

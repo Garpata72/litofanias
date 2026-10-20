@@ -4,6 +4,7 @@ from __future__ import annotations
 PRINTER = "Creality Ender 3 V3 KE"
 BED = (220.0, 220.0, 240.0)
 PLA_DENSITY = 1.24          # g/cm³
+ACCESSORY_FILL = 0.45       # paredes + 15 % de relleno: fracción aproximada del volumen macizo
 
 NAMES = {"plana": "plana", "arco": "arco", "cilindro": "cilindro", "esfera": "esfera", "cupula": "cúpula"}
 
@@ -70,3 +71,25 @@ def settings(shape: str, size_mm: tuple[float, float, float], min_mm: float, max
     lines.append("- Mira la pieza a contraluz en el visor antes de imprimir: lo claro será fino y lo oscuro grueso.")
     lines.append("")
     return "\n".join(lines)
+
+
+def accessory_settings(notes: list[str], size_mm: tuple[float, float, float], grams_pla: float) -> str:
+    """Ajustes para la caja de luz o la base: aquí no pasa luz a través, así que se imprime rápido."""
+    w, h, d = size_mm
+    f = lambda v: f"{v:.1f}".replace(".", ",")
+    return "\n".join([
+        f"Ajustes de impresión recomendados — {PRINTER}",
+        f"Accesorio: {f(w)} × {f(h)} × {f(d)} mm, unos {grams_pla:.0f} g de PLA",
+        "",
+        *notes,
+        "",
+        "AJUSTES",
+        "- PLA de cualquier color opaco (negro o gris oscuro evitan que la luz se escape por las paredes).",
+        "- Capa 0,2 mm, 3 paredes, relleno 15 %, velocidad normal.",
+        "- Sin soportes.",
+        "",
+        "LUZ",
+        "- Luz LED USB de 5 V en blanco cálido (2700-3000 K): tira adhesiva o módulo pequeño.",
+        "- Prueba la litofanía con la luz antes de pegar nada: más luz no siempre se ve mejor.",
+        "",
+    ])

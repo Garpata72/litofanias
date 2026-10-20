@@ -200,7 +200,7 @@ async function open(opts) {
       const f = (v) => v.toLocaleString("es-ES", { maximumFractionDigits: 1 });
       $("#lbInfo").textContent = `${f(size.x)} × ${f(size.y)} × ${f(size.z)} mm · ${Math.round(triangles).toLocaleString("es-ES")} triángulos`;
     }
-    setMode(opts.download ? "lit" : mode);
+    setMode(opts.mode || (opts.download ? "lit" : mode));
     fit();
     $("#lbMsg").hidden = true;
   } catch (e) {

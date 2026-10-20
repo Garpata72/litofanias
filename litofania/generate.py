@@ -11,6 +11,7 @@ from dataclasses import replace
 
 from PIL import Image
 
+from litofania.accessories import outline_loops
 from litofania.contours import contour_mask, erode, load_mask
 from litofania.heightmap import FlatParams, load_gray, sphere_gray, thickness_map
 from litofania.shapes import build_solid, build_sphere, signed_volume, sphere_lats
@@ -26,6 +27,7 @@ class Result:
     triangles: int
     radius_mm: float | None = None
     volume_mm3: float = 0.0
+    outline: list | None = None      # plana recortada: contorno en mm, para la ventana de la caja de luz
 
 
 def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana", angle_deg: float = 120.0,
@@ -56,10 +58,12 @@ def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana"
             rows, cols = gray.shape
             allowed = erode(mask, round(p.border_mm / p.mm_per_px) + 2)
             gray = engraving.overlay(gray, text, text_px, rows - 1, cols // 2, allowed=allowed, max_width=round(0.7 * cols))
+        outline = outline_loops(mask, p.mm_per_px)
         t = thickness_map(gray, no_frame)
         t[mask & ~erode(mask, round(p.border_mm / p.mm_per_px))] = p.max_mm
         s = build_solid(t, p.mm_per_px, shape, mask=mask)
     else:
+        outline = None
         gray = load_gray(image_path, p, wrap, **framing)
         if text:
             gray = engraving.add_below(gray, text, text_px)
@@ -71,7 +75,7 @@ def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana"
     if shape != "plana":   # en las curvas la altura va en z (se imprimen de pie)
         w, h, d = w, d, h
     return Result(width_mm=w, height_mm=h, depth_mm=d, triangles=len(s.faces), radius_mm=s.radius_mm,
-                  volume_mm3=signed_volume(s.verts, s.faces))
+                  volume_mm3=signed_volume(s.verts, s.faces), outline=outline)
 
 
 def generate_sphere(image_path: str, out_path: str, p: FlatParams, shape: str, diameter_mm: float,

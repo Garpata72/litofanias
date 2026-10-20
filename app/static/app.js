@@ -17,6 +17,7 @@ const ICONS = {
   save: "M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6",
   trash: "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13 M10 11v6 M14 11v6",
   doc: "M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6",
+  lamp: "M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z",
 };
 const icon = (name) => `<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[name] || ""}"/></svg></span>`;
 $$("[data-icon]").forEach((e) => e.insertAdjacentHTML("afterbegin", icon(e.dataset.icon)));
@@ -83,6 +84,7 @@ function showShapeFields() {
       || (el.dataset.contour && el.dataset.contour !== $("#contorno").value);
   });
   $$("[data-text]").forEach((el) => (el.hidden = !$("#texto").value.trim()));
+  updateAccessoryButton();
 }
 /* Ancho de la imagen ya colocada: el de la plana, la longitud del arco o el perímetro del cilindro. */
 const ROUND = ["cilindro", "esfera", "cupula"];
@@ -201,6 +203,7 @@ async function loadImages() {
 
 function select(meta) {
   current = meta;
+  updateAccessoryButton();
   store.set("ultima", meta.id);
   $("#title").textContent = meta.nombre;
   $("#empty").hidden = true;
@@ -588,6 +591,41 @@ $("#btnPresetDel").addEventListener("click", async () => {
     toast(`Plantilla «${name}» borrada.`, "ok");
   } catch (e) { toast(e.message, "err"); }
 });
+
+/* ───────── Caja de luz y soportes (fase 8) ───────── */
+const ACC_LABEL = { plana: "Generar caja de luz", arco: "Generar base con luz", cilindro: "Generar base con luz",
+  cupula: "Generar base con luz", esfera: "Generar peana con luz" };
+function updateAccessoryButton() {
+  const forma = $("#forma").value;
+  $("#accLabel").textContent = ACC_LABEL[forma];
+  $("#btnAcc").disabled = !current;
+  $("#btnAcc").title = "Se ajusta a la última litofanía generada con esta imagen y esta forma";
+}
+async function generateAccessory() {
+  const forma = $("#forma").value;
+  const btn = $("#btnAcc");
+  btn.disabled = true;
+  try {
+    const info = await (await api("POST", "/api/accesorios", {
+      imagen_id: current.id, forma,
+      fondo: Number($("#acc_fondo").value), alto: Number($("#acc_alto").value), holgura: Number($("#acc_holgura").value),
+    })).json();
+    const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 }));
+    window.Visor.open({
+      url: info.vista,
+      name: `${info.nombre} · ${current.nombre}`,
+      details: `${w} × ${h} × ${d} mm · unos ${info.gramos} g de PLA`,
+      download: info.stl,
+      settings: info.ajustes,
+      mode: "relief",
+    });
+  } catch (e) {
+    toast(e.message, "err");
+  } finally {
+    updateAccessoryButton();
+  }
+}
+$("#btnAcc").addEventListener("click", generateAccessory);
 
 /* ───────── Generar STL y verlo en 3D ───────── */
 async function generate() {
