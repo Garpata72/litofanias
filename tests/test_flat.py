@@ -135,3 +135,28 @@ def test_small_photo_sits_on_the_fill(tmp_path):
     assert 0 < g[rows // 2, cols // 4] < PLAIN                                # fundido en el borde de la foto
     moon = load_gray(str(photo), p, zoom=0.5, fill="luna")
     assert moon[rows // 2, cols // 2] == 0.0 and moon[:3].std() > 0.01         # alrededor, textura y no liso
+
+
+def test_outside_relief_and_crop(tmp_path):
+    from litofania.shapes import build_solid, build_sphere, signed_volume, sphere_lats
+
+    t = np.random.default_rng(1).uniform(0.8, 3.0, (20, 40))
+    for shape in ("arco", "cilindro"):
+        s = build_solid(t, 0.5, shape, 120, outside=True)
+        _edges_are_manifold(s.faces)
+        r = np.hypot(s.verts[:, 0], s.verts[:, 1])
+        assert abs(r.max() - s.radius_mm) < 1e-6 and abs(r.min() - (s.radius_mm - 3.0)) < 0.01
+    lt, lb = sphere_lats(30, "esfera", 20, 0.5)
+    s = build_sphere(t, 30, lt, lb, outside=True)
+    _edges_are_manifold(s.faces)
+    assert signed_volume(s.verts, s.faces) > 0
+
+    # Giro y recorte: la mitad izquierda negra de una foto 40×20, girada 90°, queda arriba.
+    img = np.full((20, 40), 255, np.uint8)
+    img[:, :20] = 0
+    Image.fromarray(img).save(tmp_path / "f.png")
+    p = FlatParams(width_mm=20, mm_per_px=1, border_mm=0, rotate=90)
+    g = load_gray(str(tmp_path / "f.png"), p)
+    assert g.shape[0] > g.shape[1] and g[:3].mean() < 0.1 and g[-3:].mean() > 0.9
+    p.crop = (0, 0.5, 1, 0.5)   # solo la mitad de abajo (la blanca)
+    assert load_gray(str(tmp_path / "f.png"), p).min() > 0.9

@@ -111,7 +111,7 @@ def test_custom_mask_upload_and_generate(client):
 
 def test_moon_fill(client):
     meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
-    r = client.get("/api/relleno/luna.png?ancho=80&alto=50")
+    r = client.get("/api/relleno.png?relleno=luna&ancho=80&alto=50")
     assert r.status_code == 200 and Image.open(io.BytesIO(r.content)).size == (80, 50)
     for body in ({"forma": "esfera", "relleno": "luna", "ajuste": "relleno", "agujero": 20}, {"forma": "plana", "relleno": "luna", "zoom": 0.6}):
         info = client.post("/api/litofanias", json={"imagen_id": meta["id"], "diametro": 40, "ancho": 40, "resolucion": 0.8, **body})
@@ -134,3 +134,51 @@ def test_text_settings_and_presets(client):
     assert client.get("/api/plantillas").json() == [{"nombre": "Regalo", "ajustes": {"forma": "plana", "ancho": 120}}]
     assert client.delete("/api/plantillas/Regalo").status_code == 200
     assert client.get("/api/plantillas").json() == []
+
+
+def _closed(stl: bytes) -> bool:
+    n = int.from_bytes(stl[80:84], "little")
+    tri = np.frombuffer(stl[84:], dtype=np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")]), count=n)["v"]
+    pts, idx = np.unique(tri.reshape(-1, 3), axis=0, return_inverse=True)
+    f = idx.reshape(-1, 3)
+    e = np.sort(np.vstack([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]), axis=1)
+    return bool((np.unique(e, axis=0, return_counts=True)[1] == 2).all())
+
+
+def test_accessories(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "ancho": 60, "diametro": 50, "agujero": 30, "resolucion": 0.8, "marco": 3}
+    assert client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "plana"}).status_code == 404
+    for forma, extra in [("plana", {}), ("plana", {"contorno": "corazon"}), ("arco", {}), ("cilindro", {}),
+                         ("esfera", {}), ("cupula", {})]:
+        lito = client.post("/api/litofanias", json={**base, "forma": forma, **extra}).json()
+        info = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": forma}).json()
+        stl = client.get(info["stl"]).content
+        assert _closed(stl), forma
+        if forma == "plana":   # la caja es algo más grande que la litofanía
+            assert lito["medidas_mm"][0] < info["medidas_mm"][0] < lito["medidas_mm"][0] + 8
+        assert "LED USB" in client.get(info["ajustes"]).text
+
+
+def test_texture_fill(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
+    rgb = np.zeros((40, 40, 3), np.uint8)
+    rgb[::8] = (200, 40, 40)                       # rayas rojas: se guardan en gris con todo el contraste
+    buf = io.BytesIO()
+    Image.fromarray(rgb).save(buf, format="PNG")
+    tex = client.post("/api/texturas", files={"archivo": ("rayas.png", buf.getvalue(), "image/png")}).json()
+    stored = Image.open(io.BytesIO(client.get(f"/api/texturas/{tex['id']}/archivo").content))
+    assert stored.mode == "L" and np.asarray(stored).max() == 255 and np.asarray(stored).min() == 0
+    assert [t["id"] for t in client.get("/api/texturas").json()] == [tex["id"]]
+
+    q = f"relleno=textura&textura_id={tex['id']}&ancho=60&alto=40&mm_px=0.5"
+    flat = np.asarray(Image.open(io.BytesIO(client.get(f"/api/relleno.png?{q}").content)), dtype=float)
+    soft = np.asarray(Image.open(io.BytesIO(client.get(f"/api/relleno.png?{q}&textura_relieve=0.3").content)), dtype=float)
+    assert flat.std() > soft.std() > 0               # el relieve se puede bajar
+    assert client.get("/api/relleno.png?relleno=textura&textura_id=nada").status_code == 422
+
+    body = {"imagen_id": meta["id"], "ancho": 40, "diametro": 40, "agujero": 20, "resolucion": 0.8,
+            "relleno": "textura", "textura_id": tex["id"], "textura_mm": 10}
+    assert client.post("/api/litofanias", json={**body, "zoom": 0.5}).status_code == 200
+    assert client.post("/api/litofanias", json={**body, "forma": "esfera", "ajuste": "relleno"}).status_code == 200
+    assert client.post("/api/litofanias", json={**body, "textura_id": None}).status_code == 422

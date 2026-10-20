@@ -21,8 +21,11 @@ class Solid:
     radius_mm: float | None = None   # radio exterior de las piezas curvas; eje en x = y = 0 (esfera: centro en el origen)
 
 
-def _place(t: np.ndarray, mm_per_px: float, shape: str, angle_deg: float):
-    """Devuelve las coordenadas (rows, cols, 3) de la cara delantera y la trasera."""
+def _place(t: np.ndarray, mm_per_px: float, shape: str, angle_deg: float, outside: bool = False):
+    """Devuelve las coordenadas (rows, cols, 3) de la cara delantera (la del relieve) y la trasera.
+
+    En las curvas, `outside` lleva el relieve a la cara convexa y deja lisa la de dentro; `radius` es
+    siempre el radio exterior máximo."""
     rows, cols = t.shape
     v = (rows - 1 - np.arange(rows))[:, None] * mm_per_px * np.ones((1, cols))
     if shape == "plana":
@@ -45,17 +48,21 @@ def _place(t: np.ndarray, mm_per_px: float, shape: str, angle_deg: float):
     def ring(r):   # -sin: la imagen se lee bien mirando desde fuera (cara convexa), con la luz dentro
         return np.stack([-r * np.sin(a), r * np.cos(a), v], axis=-1)
 
+    if outside:
+        inner = radius - t.max()
+        return ring(inner + t), ring(np.full_like(t, inner)), radius
     return ring(radius - t), ring(np.full_like(t, radius)), radius
 
 
 def build_solid(t: np.ndarray, mm_per_px: float, shape: str = "plana", angle_deg: float = 120.0,
-                mask: np.ndarray | None = None) -> Solid:
-    """`mask` (solo plana) recorta la pieza: se quedan los cuadros con sus cuatro esquinas dentro."""
+                mask: np.ndarray | None = None, outside: bool = False) -> Solid:
+    """`mask` (solo plana) recorta la pieza: se quedan los cuadros con sus cuatro esquinas dentro.
+    `outside` (arco y cilindro) pone el relieve por fuera."""
     if mask is not None:
         return _masked_flat(t, mm_per_px, mask)
     rows, cols = t.shape
     closed = shape == "cilindro"
-    front, back, radius = _place(t, mm_per_px, shape, angle_deg)
+    front, back, radius = _place(t, mm_per_px, shape, angle_deg, outside)
     n = rows * cols
     verts = np.vstack([front.reshape(-1, 3), back.reshape(-1, 3)])
 
@@ -103,8 +110,9 @@ def sphere_lats(radius: float, shape: str, hole_mm: float, mm_per_px: float) -> 
     return lat_top, -float(np.arccos(min(1.0, hole_mm / (2 * radius))))
 
 
-def build_sphere(t: np.ndarray, radius: float, lat_top: float, lat_bottom: float) -> Solid:
-    """Esfera (o cúpula) con la trasera lisa por fuera y el relieve por dentro, como el cilindro.
+def build_sphere(t: np.ndarray, radius: float, lat_top: float, lat_bottom: float, outside: bool = False) -> Solid:
+    """Esfera (o cúpula) con la trasera lisa por fuera y el relieve por dentro, como el cilindro; con
+    `outside`, al revés: lisa por dentro y el relieve por fuera.
 
     Las columnas dan la vuelta completa (el centro de la imagen mira a +y y la costura queda detrás);
     la fila de arriba se cierra con una tapa en el polo y la de abajo deja la abertura.
@@ -118,10 +126,15 @@ def build_sphere(t: np.ndarray, radius: float, lat_top: float, lat_bottom: float
 
     n = rows * cols
     pole_t = float(t[0].mean())
+    if outside:
+        inner = radius - float(t.max())
+        relief, smooth, poles = shell(inner + t), shell(np.full_like(t, inner)), [inner + pole_t, inner]
+    else:
+        relief, smooth, poles = shell(radius - t), shell(np.full_like(t, radius)), [radius - pole_t, radius]
     verts = np.vstack([
-        shell(radius - t).reshape(-1, 3),
-        shell(np.full_like(t, radius)).reshape(-1, 3),
-        [[0.0, 0.0, radius - pole_t], [0.0, 0.0, radius]],   # centros de las tapas: delantera y trasera
+        relief.reshape(-1, 3),
+        smooth.reshape(-1, 3),
+        [[0.0, 0.0, poles[0]], [0.0, 0.0, poles[1]]],   # centros de las tapas: la del relieve y la lisa
     ])
     cf, cb = 2 * n, 2 * n + 1
 

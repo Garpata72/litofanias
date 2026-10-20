@@ -10,6 +10,7 @@ ROOT = Path(os.environ.get("LITOFANIAS_DATOS", Path(__file__).resolve().parent.p
 IMAGES = ROOT / "imagenes"
 MODELS = ROOT / "stl"
 MASKS = ROOT / "mascaras"
+TEXTURES = ROOT / "texturas"
 PRESETS = ROOT / "plantillas.json"
 
 
@@ -17,6 +18,7 @@ def ensure_dirs() -> None:
     IMAGES.mkdir(parents=True, exist_ok=True)
     MODELS.mkdir(parents=True, exist_ok=True)
     MASKS.mkdir(parents=True, exist_ok=True)
+    TEXTURES.mkdir(parents=True, exist_ok=True)
 
 
 def new_id() -> str:
@@ -46,18 +48,23 @@ def get_meta(image_id: str) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def mask_path(mask_id: str) -> Path | None:
-    path = MASKS / f"{mask_id}.png"
-    return path if mask_id.isalnum() and path.exists() else None
+def asset_path(folder: Path, asset_id: str) -> Path | None:
+    """PNG de una máscara o una textura subida."""
+    path = folder / f"{asset_id}.png"
+    return path if asset_id.isalnum() and path.exists() else None
 
 
-def save_mask_meta(mask_id: str, meta: dict) -> None:
-    (MASKS / f"{mask_id}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+def save_asset_meta(folder: Path, asset_id: str, meta: dict) -> None:
+    (folder / f"{asset_id}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
 
 
-def list_masks() -> list[dict]:
-    metas = [json.loads(p.read_text(encoding="utf-8")) for p in MASKS.glob("*.json")]
+def list_assets(folder: Path) -> list[dict]:
+    metas = [json.loads(p.read_text(encoding="utf-8")) for p in folder.glob("*.json")]
     return sorted(metas, key=lambda m: m["creada"], reverse=True)
+
+
+def mask_path(mask_id: str) -> Path | None:
+    return asset_path(MASKS, mask_id)
 
 
 def load_presets() -> dict[str, dict]:

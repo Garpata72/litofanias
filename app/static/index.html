@@ -80,6 +80,11 @@
       <label class="num" data-shapes="arco"><span>Ángulo del arco</span><input id="angulo" type="number" min="30" max="300" step="5" value="120"><i>grados</i></label>
       <label class="num" data-shapes="cilindro esfera cupula"><span>Diámetro exterior</span><input id="diametro" type="number" min="30" max="210" step="1" value="80"><i>mm</i></label>
       <label class="num" data-shapes="esfera"><span>Abertura para la luz</span><input id="agujero" type="number" min="10" max="200" step="1" value="40"><i>mm</i></label>
+      <label class="fsel" data-shapes="arco cilindro esfera cupula"><span>Relieve</span>
+        <select id="relieve" aria-label="Cara donde va el relieve">
+          <option value="dentro">Por dentro (fuera liso)</option>
+          <option value="fuera">Por fuera</option>
+        </select></label>
       <label class="fsel" data-shapes="esfera cupula"><span>Foto</span>
         <select id="ajuste" aria-label="Cómo se coloca la foto">
           <option value="centrada">Centrada delante</option>
@@ -91,7 +96,19 @@
         <select id="relleno" aria-label="Relleno de lo que no tapa la foto">
           <option value="liso">Liso</option>
           <option value="luna">Luna (cráteres)</option>
+          <option value="textura">Textura propia…</option>
         </select></label>
+      <div class="maskbox" data-shapes="plana esfera cupula" data-fit="centrada relleno" data-fill="textura">
+        <div id="textures" class="thumbs"></div>
+        <button id="btnTex" class="btn small" type="button" title="Subir una imagen para usarla como textura del relleno"><span data-icon="upload"></span> Subir textura</button>
+        <input id="fileTex" type="file" accept="image/*" hidden>
+        <p class="hint">Mejor una imagen cuadrada de 512 a 1024 px y «sin costuras» (seamless), para que al repetirse no se noten los cortes. Se pasa a grises automáticamente.</p>
+        <label class="num"><span>Tamaño del motivo</span><input id="textura_mm" type="number" min="5" max="300" step="1" value="40"><i>mm</i></label>
+        <label class="slider"><span>Relieve de la textura</span><output data-for="textura_relieve"></output>
+          <input id="textura_relieve" type="range" min="0" max="3" step="0.05" value="1"></label>
+        <label class="check"><input id="textura_invertir" type="checkbox"> Invertir la textura</label>
+        <label class="check"><input id="textura_bn" type="checkbox"> Blanco y negro (sin grises)</label>
+      </div>
       <label class="textfield"><span>Texto grabado</span><input id="texto" type="text" maxlength="60" placeholder="Un nombre, una fecha…"></label>
       <label class="num" data-text><span>Alto de las letras</span><input id="texto_mm" type="number" min="3" max="40" step="0.5" value="8"><i>mm</i></label>
       <label class="num"><span>Grosor mínimo</span><input id="min" type="number" min="0.4" max="3" step="0.1" value="0.8"><i>mm</i></label>
@@ -99,6 +116,15 @@
       <label class="num"><span>Resolución</span><input id="resolucion" type="number" min="0.05" max="1" step="0.05" value="0.2"><i>mm/px</i></label>
       <label class="num" data-shapes="plana arco cilindro"><span>Marco</span><input id="marco" type="number" min="0" max="20" step="0.5" value="3"><i>mm</i></label>
       <p class="hint">Valores pensados para una Ender 3 V3 KE con boquilla de 0,4 mm.</p>
+    </div>
+
+    <div class="sidehead"><span>Caja de luz y soporte</span></div>
+    <div class="fields">
+      <label class="num" data-shapes="plana"><span>Fondo para la luz</span><input id="acc_fondo" type="number" min="10" max="80" step="1" value="30"><i>mm</i></label>
+      <label class="num" data-shapes="arco cilindro esfera cupula"><span>Alto de la base</span><input id="acc_alto" type="number" min="12" max="60" step="1" value="25"><i>mm</i></label>
+      <label class="num"><span>Holgura del encaje</span><input id="acc_holgura" type="number" min="0.1" max="1" step="0.05" value="0.4"><i>mm</i></label>
+      <button id="btnAcc" class="btn" type="button" disabled><span data-icon="lamp"></span> <span id="accLabel">Generar caja de luz</span></button>
+      <p class="hint">Con hueco para una luz LED USB de 5 V y paso para el cable. Se ajusta a la última litofanía generada.</p>
     </div>
   </aside>
   <div id="scrim"></div>
@@ -116,7 +142,12 @@
     </div>
     <section id="views" hidden>
       <figure class="view">
-        <figcaption id="capFrame">Original</figcaption>
+        <figcaption class="withtools"><span id="capFrame">Original</span>
+          <span class="tools">
+            <button id="btnRotL" class="chip" type="button" title="Girar la foto a la izquierda">⟲</button>
+            <button id="btnRotR" class="chip" type="button" title="Girar la foto a la derecha">⟳</button>
+            <button id="btnCrop" class="chip" type="button" aria-pressed="false" title="Recortar la foto (doble clic: sin recorte)">Recortar</button>
+          </span></figcaption>
         <div class="stage"><canvas id="cvFrame" aria-label="Encuadre de la foto"></canvas></div>
       </figure>
       <figure class="view">

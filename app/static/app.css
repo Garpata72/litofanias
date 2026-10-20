@@ -117,6 +117,7 @@ body.side-hidden #side { display: none; }
 .presets select:focus, .textfield input:focus { border-color: var(--amber); outline: 0; }
 .presets .iconbtn { width: 1.9rem; height: 1.9rem; }
 .textfield { display: grid; gap: .3rem; font-size: .88rem; }
+.fields > .btn { justify-content: center; }
 .hint { margin: .2rem 0 0; color: var(--mute); font-size: .78rem; }
 
 /* ───────── Zona principal ───────── */
@@ -131,6 +132,14 @@ body.side-hidden #side { display: none; }
   background: var(--bed-2); border: 1px solid var(--line-soft);
 }
 .stage img, .stage canvas { max-width: 100%; max-height: calc(100vh - 14rem); display: block; }
+.view figcaption.withtools { display: flex; align-items: center; gap: .5rem; }
+.withtools .tools { margin-left: auto; display: flex; gap: .3rem; }
+.chip {
+  font: 600 .74rem var(--display); letter-spacing: .04em; text-transform: none; color: var(--text);
+  background: var(--bed); border: 1px solid var(--line); border-radius: var(--r); padding: .2rem .55rem; cursor: pointer;
+}
+.chip:hover { border-color: var(--line-hi); }
+.chip[aria-pressed="true"] { background: var(--amber); color: #111; border-color: var(--amber); }
 .stage canvas.movable { cursor: grab; touch-action: none; }
 .stage canvas.movable:active { cursor: grabbing; }
 .stage.lit { background: radial-gradient(ellipse at center, rgba(251, 191, 36, .08), transparent 70%), var(--bed-2); }

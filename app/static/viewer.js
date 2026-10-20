@@ -30,7 +30,7 @@ const litMat = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
   uniforms: {
     zBack: { value: 0 }, tMin: { value: 0.8 }, absorb: { value: ABSORB },
-    radial: { value: 0 }, rOut: { value: 0 },
+    radial: { value: 0 }, rOut: { value: 0 }, outside: { value: 0 }, rIn: { value: 0 },
   },
   vertexShader: `
     varying vec3 vPos; varying vec3 vNormal; varying vec3 vLocal; varying vec3 vLocalN;
@@ -44,19 +44,22 @@ const litMat = new THREE.ShaderMaterial({
     }`,
   fragmentShader: `
     uniform float zBack; uniform float tMin; uniform float absorb; uniform float radial; uniform float rOut;
+    uniform float outside; uniform float rIn;
     varying vec3 vPos; varying vec3 vNormal; varying vec3 vLocal; varying vec3 vLocalN;
     void main() {
       vec3 warm = vec3(1.0, 0.87, 0.66);
       if (radial > 0.5) {
-        // Pieza curva con eje en x = y = 0 (coordenadas del archivo). La cara exterior lisa se deja
-        // ver a través y se ilumina la interior, cuyo radio da el grosor en cada punto.
+        // Pieza curva con eje en x = y = 0 (coordenadas del archivo). La cara lisa se deja ver a través y
+        // se ilumina la del relieve, cuyo radio da el grosor en cada punto: la interior (relieve por dentro)
+        // o la exterior (relieve por fuera, outside = 1).
         // radial = 1: eje vertical (arco y cilindro); radial = 2: centro de la esfera.
         vec3 rad = radial > 1.5 ? vLocal : vec3(vLocal.xy, 0.0);
         float dist = length(rad);
-        float inward = dot(normalize(vLocalN), -rad / max(dist, 1e-4));
-        if (inward < -0.3) discard;
-        if (inward < 0.3) { gl_FragColor = vec4(warm * 0.06, 1.0); return; }
-        float tr = rOut - dist;
+        float facing = dot(normalize(vLocalN), -rad / max(dist, 1e-4));
+        if (outside > 0.5) facing = -facing;
+        if (facing < -0.3) discard;
+        if (facing < 0.3) { gl_FragColor = vec4(warm * 0.06, 1.0); return; }
+        float tr = outside > 0.5 ? dist - rIn : rOut - dist;
         gl_FragColor = vec4(warm * clamp(exp(-absorb * (tr - tMin)), 0.0, 1.0), 1.0);
         return;
       }
@@ -117,7 +120,7 @@ function clear() {
 }
 
 /* Centra la pieza, deja la cara trasera en su sitio y calcula el grosor mínimo de la cara iluminada. */
-function place(obj, radius, sphere) {
+function place(obj, radius, sphere, rIn) {
   if (radius) {
     // Las curvas se generan de pie con la altura en z y la cara convexa hacia +y: se giran para
     // tener la altura hacia arriba y la cara convexa mirando a la cámara.
@@ -151,7 +154,8 @@ function place(obj, radius, sphere) {
         p.fromBufferAttribute(pos, i);
         const r = sphere ? p.length() : Math.hypot(p.x, p.y);
         const inward = sphere ? -n.dot(p) / r : (-n.x * p.x - n.y * p.y) / r;
-        if (inward > 0.5) tMin = Math.min(tMin, radius - r);
+        if (rIn && inward < -0.5) tMin = Math.min(tMin, r - rIn);
+        else if (!rIn && inward > 0.5) tMin = Math.min(tMin, radius - r);
         continue;
       }
       n.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
@@ -162,6 +166,8 @@ function place(obj, radius, sphere) {
   });
   litMat.uniforms.radial.value = radius ? (sphere ? 2 : 1) : 0;
   litMat.uniforms.rOut.value = radius || 0;
+  litMat.uniforms.outside.value = rIn ? 1 : 0;
+  litMat.uniforms.rIn.value = rIn || 0;
   litMat.uniforms.zBack.value = zBack;
   litMat.uniforms.tMin.value = Number.isFinite(tMin) ? tMin : 0.8;
   return { size: b.getSize(new THREE.Vector3()), triangles };
@@ -195,12 +201,12 @@ async function open(opts) {
     if (current !== opts) return;   // se abrió otro mientras cargaba
     root = obj;
     scene.add(root);
-    const { size, triangles } = place(root, opts.radius, opts.sphere);
+    const { size, triangles } = place(root, opts.radius, opts.sphere, opts.rIn);
     if (!opts.details) {
       const f = (v) => v.toLocaleString("es-ES", { maximumFractionDigits: 1 });
       $("#lbInfo").textContent = `${f(size.x)} × ${f(size.y)} × ${f(size.z)} mm · ${Math.round(triangles).toLocaleString("es-ES")} triángulos`;
     }
-    setMode(opts.download ? "lit" : mode);
+    setMode(opts.mode || (opts.download ? "lit" : mode));
     fit();
     $("#lbMsg").hidden = true;
   } catch (e) {
