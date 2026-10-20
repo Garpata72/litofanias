@@ -48,11 +48,13 @@
       <label class="fsel"><span>Forma</span>
         <select id="forma" aria-label="Forma">
           <option value="plana">Plana</option>
-          <option disabled>Arco (próximamente)</option>
-          <option disabled>Cilindro (próximamente)</option>
+          <option value="arco">Arco</option>
+          <option value="cilindro">Cilindro (lámpara)</option>
           <option disabled>Esfera (próximamente)</option>
         </select></label>
-      <label class="num"><span>Ancho total</span><input id="ancho" type="number" min="20" max="210" step="1" value="150"><i>mm</i></label>
+      <label class="num" data-shapes="plana arco"><span>Ancho total</span><input id="ancho" type="number" min="20" max="400" step="1" value="150"><i>mm</i></label>
+      <label class="num" data-shapes="arco"><span>Ángulo del arco</span><input id="angulo" type="number" min="30" max="300" step="5" value="120"><i>grados</i></label>
+      <label class="num" data-shapes="cilindro"><span>Diámetro exterior</span><input id="diametro" type="number" min="30" max="210" step="1" value="80"><i>mm</i></label>
       <label class="num"><span>Grosor mínimo</span><input id="min" type="number" min="0.4" max="3" step="0.1" value="0.8"><i>mm</i></label>
       <label class="num"><span>Grosor máximo</span><input id="max" type="number" min="1" max="8" step="0.1" value="3"><i>mm</i></label>
       <label class="num"><span>Resolución</span><input id="resolucion" type="number" min="0.05" max="1" step="0.05" value="0.2"><i>mm/px</i></label>

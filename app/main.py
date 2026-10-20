@@ -7,6 +7,7 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -15,8 +16,9 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from app import storage
-from litofania.generate import generate_flat
+from litofania.generate import generate
 from litofania.heightmap import FlatParams
+from litofania.shapes import SHAPES
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
@@ -27,9 +29,12 @@ storage.ensure_dirs()
 SERVER = None  # lo pone run.py para poder cerrar la app desde el botón de apagado
 
 
-class FlatRequest(BaseModel):
+class LitoRequest(BaseModel):
     imagen_id: str
-    ancho: float = Field(150.0, ge=20, le=210)
+    forma: Literal["plana", "arco", "cilindro"] = "plana"
+    ancho: float = Field(150.0, ge=20, le=400)      # plana y arco: ancho desarrollado
+    angulo: float = Field(120.0, ge=30, le=300)     # arco
+    diametro: float = Field(80.0, ge=30, le=210)    # cilindro: diámetro exterior
     min: float = Field(0.8, ge=0.4, le=3.0)
     max: float = Field(3.0, ge=1.0, le=8.0)
     resolucion: float = Field(0.2, ge=0.05, le=1.0)
@@ -92,54 +97,62 @@ def get_image(image_id: str) -> FileResponse:
     return FileResponse(path)
 
 
-@app.post("/api/litofanias/plana")
-def make_flat(req: FlatRequest) -> dict:
+@app.post("/api/litofanias")
+def make_lithophane(req: LitoRequest) -> dict:
     path = storage.image_path(req.imagen_id)
     if path is None:
         raise HTTPException(404, "Imagen no encontrada")
     if req.min >= req.max:
         raise HTTPException(422, "El grosor mínimo debe ser menor que el máximo")
-    if req.ancho <= 2 * req.marco + 5:
+    width = math.pi * req.diametro if req.forma == "cilindro" else req.ancho
+    if req.forma != "cilindro" and width <= 2 * req.marco + 5:
         raise HTTPException(422, "El marco es demasiado ancho para ese tamaño")
+    if req.forma == "cilindro" and req.diametro <= 2 * req.max + 10:
+        raise HTTPException(422, "El diámetro es demasiado pequeño para ese grosor")
 
     p = FlatParams(
-        width_mm=req.ancho, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
+        width_mm=width, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
         border_mm=req.marco, brightness=req.brillo, contrast=req.contraste,
         gamma=req.gamma, invert=req.invertir,
     )
-    r = generate_flat(str(path), str(storage.MODELS / f"{req.imagen_id}-plana.stl"), p)
+    name = f"{req.imagen_id}-{req.forma}"
+    r = generate(str(path), str(storage.MODELS / f"{name}.stl"), p, req.forma, req.angulo)
 
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
-    preview_res = max(p.mm_per_px, math.sqrt(4 * r.width_mm * r.height_mm / PREVIEW_TRIANGLES))
-    preview = replace(p, mm_per_px=preview_res)
-    generate_flat(str(path), str(storage.MODELS / f"{req.imagen_id}-plana-vista.stl"), preview)
+    preview_res = max(p.mm_per_px, math.sqrt(4 * width * (r.height_mm or width) / PREVIEW_TRIANGLES))
+    generate(str(path), str(storage.MODELS / f"{name}-vista.stl"), replace(p, mm_per_px=preview_res), req.forma, req.angulo)
 
-    base = f"/api/litofanias/{req.imagen_id}"
+    base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
     return {
-        "stl": f"{base}/plana.stl",
-        "vista": f"{base}/plana-vista.stl?v={time.time_ns()}",
+        "forma": req.forma,
+        "stl": f"{base}.stl",
+        "vista": f"{base}-vista.stl?v={time.time_ns()}",
         "medidas_mm": [round(r.width_mm, 1), round(r.height_mm, 1), round(r.depth_mm, 1)],
         "triangulos": r.triangles,
         "grosor_mm": [p.min_mm, p.max_mm],
+        "radio_mm": r.radius_mm,
     }
 
 
-@app.get("/api/litofanias/{image_id}/plana.stl")
-def download_flat(image_id: str) -> FileResponse:
-    path = storage.MODELS / f"{image_id}-plana.stl"
-    if not image_id.isalnum() or not path.exists():
+@app.post("/api/litofanias/plana")
+def make_flat(req: LitoRequest) -> dict:
+    return make_lithophane(req.model_copy(update={"forma": "plana"}))
+
+
+def _model_path(image_id: str, shape: str, suffix: str = "") -> Path:
+    path = storage.MODELS / f"{image_id}-{shape}{suffix}.stl"
+    if not image_id.isalnum() or shape not in SHAPES or not path.exists():
         raise HTTPException(404, "Todavía no se ha generado esa litofanía")
+    return path
+
+
+@app.get("/api/litofanias/{image_id}/{shape}.stl")
+def download_model(image_id: str, shape: str) -> FileResponse:
+    if shape.endswith("-vista"):
+        return FileResponse(_model_path(image_id, shape.removesuffix("-vista"), "-vista"), media_type="model/stl")
     meta = storage.get_meta(image_id) or {}
     name = Path(meta.get("nombre", image_id)).stem
-    return FileResponse(path, media_type="model/stl", filename=f"litofania-{name}.stl")
-
-
-@app.get("/api/litofanias/{image_id}/plana-vista.stl")
-def preview_flat(image_id: str) -> FileResponse:
-    path = storage.MODELS / f"{image_id}-plana-vista.stl"
-    if not image_id.isalnum() or not path.exists():
-        raise HTTPException(404, "Todavía no se ha generado esa litofanía")
-    return FileResponse(path, media_type="model/stl")
+    return FileResponse(_model_path(image_id, shape), media_type="model/stl", filename=f"litofania-{shape}-{name}.stl")
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
