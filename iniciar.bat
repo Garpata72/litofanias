@@ -21,13 +21,29 @@ if not exist ".venv\Scripts\python.exe" (
 set "VPY=.venv\Scripts\python.exe"
 
 rem 2) Dependencias: solo se instalan si requirements.txt ha cambiado (necesita internet solo entonces)
+rem    Si Windows o el antivirus tienen un archivo bloqueado (WinError 32), se reintenta hasta 3 veces.
 fc /b requirements.txt .venv\requirements.instalado >nul 2>nul
 if errorlevel 1 (
   echo Instalando dependencias...
-  "%VPY%" -m pip install -r requirements.txt
-  if errorlevel 1 goto :error
-  copy /y requirements.txt .venv\requirements.instalado >nul
+  set "TRY=1"
+  goto :pip
 )
+goto :serve
+
+:pip
+"%VPY%" -m pip install --disable-pip-version-check -r requirements.txt
+if not errorlevel 1 (
+  copy /y requirements.txt .venv\requirements.instalado >nul
+  goto :serve
+)
+if "%TRY%"=="3" goto :error
+set /a TRY+=1
+echo.
+echo La instalacion ha fallado (a veces un archivo esta ocupado). Reintento %TRY% de 3 en 5 segundos...
+timeout /t 5 /nobreak >nul
+goto :pip
+
+:serve
 
 rem 3) Servidor (los argumentos pasan a run.py: --port 8041, --no-browser)
 "%VPY%" run.py %*
@@ -37,5 +53,7 @@ exit /b 0
 :error
 echo.
 echo Algo ha fallado en la preparacion (mira el mensaje de arriba).
+echo Si pone que un archivo esta siendo utilizado: cierra las demas ventanas de Litofanias
+echo y vuelve a abrirla. Si sigue igual, borra la carpeta .venv y abrela de nuevo.
 pause
 exit /b 1
