@@ -40,3 +40,23 @@ def test_dark_is_thick_and_border_is_max(tmp_path):
     out = tmp_path / "out.stl"
     write_stl(str(out), verts, faces)
     assert out.stat().st_size == 84 + 50 * len(faces)
+
+
+def test_curved_shapes_are_watertight():
+    from litofania.shapes import build_solid, signed_volume
+
+    t = np.random.default_rng(1).uniform(0.8, 3.0, (12, 40))
+    for shape in ("plana", "arco", "cilindro"):
+        s = build_solid(t, 0.5, shape, 120)
+        _edges_are_manifold(s.faces)
+        assert signed_volume(s.verts, s.faces) > 0, shape
+
+
+def test_cylinder_geometry():
+    from litofania.shapes import build_solid
+
+    t = np.full((10, 63), 2.0)
+    s = build_solid(t, 1.0, "cilindro")
+    r = np.hypot(s.verts[:, 0], s.verts[:, 1])
+    assert np.isclose(r.max(), 63 / (2 * np.pi))       # perímetro exterior = ancho de la imagen
+    assert np.isclose(r.min(), r.max() - 2.0)          # el relieve va por dentro

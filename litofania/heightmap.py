@@ -20,7 +20,7 @@ class FlatParams:
     invert: bool = False
 
 
-def load_gray(path: str, p: FlatParams) -> np.ndarray:
+def load_gray(path: str, p: FlatParams, wrap: bool = False) -> np.ndarray:
     """Carga la imagen, aplica ajustes básicos y la escala a la resolución de impresión.
 
     Devuelve valores 0..1 donde 1 es blanco (zona fina, deja pasar luz).
@@ -31,8 +31,10 @@ def load_gray(path: str, p: FlatParams) -> np.ndarray:
     if p.contrast != 1.0:
         img = ImageEnhance.Contrast(img).enhance(p.contrast)
 
-    inner_w = p.width_mm - 2 * p.border_mm
-    cols = max(2, round(inner_w / p.mm_per_px) + 1)
+    if wrap:   # cilindro: la imagen da la vuelta completa, sin marco en los lados
+        cols = max(8, round(p.width_mm / p.mm_per_px))
+    else:
+        cols = max(2, round((p.width_mm - 2 * p.border_mm) / p.mm_per_px) + 1)
     rows = max(2, round(cols * img.height / img.width))
     img = img.resize((cols, rows), Image.LANCZOS)
 
@@ -44,10 +46,13 @@ def load_gray(path: str, p: FlatParams) -> np.ndarray:
     return gray
 
 
-def thickness_map(gray: np.ndarray, p: FlatParams) -> np.ndarray:
-    """Oscuro = grueso, claro = fino. Añade el marco a grosor máximo."""
+def thickness_map(gray: np.ndarray, p: FlatParams, wrap: bool = False) -> np.ndarray:
+    """Oscuro = grueso, claro = fino. Añade el marco a grosor máximo.
+
+    Con `wrap` (cilindro) el marco va solo arriba y abajo: los lados se cierran entre sí.
+    """
     t = p.min_mm + (1.0 - gray) * (p.max_mm - p.min_mm)
     pad = round(p.border_mm / p.mm_per_px)
     if pad > 0:
-        t = np.pad(t, pad, mode="constant", constant_values=p.max_mm)
+        t = np.pad(t, ((pad, pad), (0, 0) if wrap else (pad, pad)), mode="constant", constant_values=p.max_mm)
     return t

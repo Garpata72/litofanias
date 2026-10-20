@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from litofania.flat import flat_mesh
 from litofania.heightmap import FlatParams, load_gray, thickness_map
+from litofania.shapes import build_solid
 from litofania.stl import write_stl
 
 
@@ -14,15 +14,20 @@ class Result:
     height_mm: float
     depth_mm: float
     triangles: int
+    radius_mm: float | None = None
+
+
+def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana", angle_deg: float = 120.0) -> Result:
+    """`p.width_mm` es el ancho desarrollado: el ancho de la plana, la longitud del arco o el perímetro del cilindro."""
+    wrap = shape == "cilindro"
+    t = thickness_map(load_gray(image_path, p, wrap), p, wrap)
+    s = build_solid(t, p.mm_per_px, shape, angle_deg)
+    write_stl(out_path, s.verts, s.faces)
+    w, h, d = (s.verts.max(axis=0) - s.verts.min(axis=0)).tolist()
+    if shape != "plana":   # en las curvas la altura va en z (se imprimen de pie)
+        w, h, d = w, d, h
+    return Result(width_mm=w, height_mm=h, depth_mm=d, triangles=len(s.faces), radius_mm=s.radius_mm)
 
 
 def generate_flat(image_path: str, out_path: str, p: FlatParams) -> Result:
-    t = thickness_map(load_gray(image_path, p), p)
-    verts, faces = flat_mesh(t, p.mm_per_px)
-    write_stl(out_path, verts, faces)
-    return Result(
-        width_mm=(t.shape[1] - 1) * p.mm_per_px,
-        height_mm=(t.shape[0] - 1) * p.mm_per_px,
-        depth_mm=p.max_mm,
-        triangles=len(faces),
-    )
+    return generate(image_path, out_path, p, "plana")

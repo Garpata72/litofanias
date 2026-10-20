@@ -28,20 +28,36 @@ camera.add(key);   // la luz frontal sigue a la cámara
 const reliefMat = new THREE.MeshStandardMaterial({ color: 0xece6da, roughness: 0.75, metalness: 0, side: THREE.DoubleSide });
 const litMat = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
-  uniforms: { zBack: { value: 0 }, tMin: { value: 0.8 }, absorb: { value: ABSORB } },
+  uniforms: {
+    zBack: { value: 0 }, tMin: { value: 0.8 }, absorb: { value: ABSORB },
+    radial: { value: 0 }, rOut: { value: 0 },
+  },
   vertexShader: `
-    varying vec3 vPos; varying vec3 vNormal;
+    varying vec3 vPos; varying vec3 vNormal; varying vec3 vLocal; varying vec3 vLocalN;
     void main() {
       vec4 w = modelMatrix * vec4(position, 1.0);
       vPos = w.xyz;
       vNormal = normalize(mat3(modelMatrix) * normal);
+      vLocal = position;
+      vLocalN = normal;
       gl_Position = projectionMatrix * viewMatrix * w;
     }`,
   fragmentShader: `
-    uniform float zBack; uniform float tMin; uniform float absorb;
-    varying vec3 vPos; varying vec3 vNormal;
+    uniform float zBack; uniform float tMin; uniform float absorb; uniform float radial; uniform float rOut;
+    varying vec3 vPos; varying vec3 vNormal; varying vec3 vLocal; varying vec3 vLocalN;
     void main() {
       vec3 warm = vec3(1.0, 0.87, 0.66);
+      if (radial > 0.5) {
+        // Pieza curva con eje en x = y = 0 (coordenadas del archivo). La cara exterior lisa se deja
+        // ver a través y se ilumina la interior, cuyo radio da el grosor en cada punto.
+        float dist = length(vLocal.xy);
+        float inward = dot(normalize(vLocalN), vec3(-vLocal.xy / max(dist, 1e-4), 0.0));
+        if (inward < -0.3) discard;
+        if (inward < 0.3) { gl_FragColor = vec4(warm * 0.06, 1.0); return; }
+        float tr = rOut - dist;
+        gl_FragColor = vec4(warm * clamp(exp(-absorb * (tr - tMin)), 0.0, 1.0), 1.0);
+        return;
+      }
       float front = gl_FrontFacing ? vNormal.z : -vNormal.z;
       if (front < 0.3) { gl_FragColor = vec4(warm * 0.06, 1.0); return; }   // cantos y trasera
       float t = max(vPos.z - zBack, 0.0);
@@ -99,7 +115,13 @@ function clear() {
 }
 
 /* Centra la pieza, deja la cara trasera en su sitio y calcula el grosor mínimo de la cara iluminada. */
-function place(obj) {
+function place(obj, radius) {
+  if (radius) {
+    // Las curvas se generan de pie con la altura en z y la cara convexa hacia +y: se giran para
+    // tener la altura hacia arriba y la cara convexa mirando a la cámara.
+    const m = new THREE.Matrix4().set(-1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1);
+    obj.quaternion.setFromRotationMatrix(m);
+  }
   obj.updateMatrixWorld(true);
   const b = new THREE.Box3().setFromObject(obj);
   const c = b.getCenter(new THREE.Vector3());
@@ -122,12 +144,21 @@ function place(obj) {
     const pos = g.attributes.position, nor = g.attributes.normal;
     const step = Math.max(1, Math.floor(pos.count / 400000));
     for (let i = 0; i < pos.count; i += step) {
+      if (radius) {
+        n.fromBufferAttribute(nor, i);
+        p.fromBufferAttribute(pos, i);
+        const r = Math.hypot(p.x, p.y);
+        if ((-n.x * p.x - n.y * p.y) / r > 0.5) tMin = Math.min(tMin, radius - r);
+        continue;
+      }
       n.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
       if (n.z < 0.5) continue;
       p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
       tMin = Math.min(tMin, p.z - zBack);
     }
   });
+  litMat.uniforms.radial.value = radius ? 1 : 0;
+  litMat.uniforms.rOut.value = radius || 0;
   litMat.uniforms.zBack.value = zBack;
   litMat.uniforms.tMin.value = Number.isFinite(tMin) ? tMin : 0.8;
   return { size: b.getSize(new THREE.Vector3()), triangles };
@@ -158,7 +189,7 @@ async function open(opts) {
     if (current !== opts) return;   // se abrió otro mientras cargaba
     root = obj;
     scene.add(root);
-    const { size, triangles } = place(root);
+    const { size, triangles } = place(root, opts.radius);
     if (!opts.details) {
       const f = (v) => v.toLocaleString("es-ES", { maximumFractionDigits: 1 });
       $("#lbInfo").textContent = `${f(size.x)} × ${f(size.y)} × ${f(size.z)} mm · ${Math.round(triangles).toLocaleString("es-ES")} triángulos`;

@@ -43,7 +43,7 @@ def test_upload_list_and_generate(client):
 
     stl = client.get(info["stl"])
     assert len(stl.content) == 84 + 50 * info["triangulos"]
-    assert "litofania-foto.stl" in stl.headers["content-disposition"]
+    assert "litofania-plana-foto.stl" in stl.headers["content-disposition"]
     assert client.get(info["vista"]).status_code == 200
 
 
@@ -63,3 +63,15 @@ def test_rejects_bad_input(client):
     r = client.post("/api/litofanias/plana", json={"imagen_id": meta["id"], "min": 2.5, "max": 2.0})
     assert r.status_code == 422
     assert client.get("/api/imagenes/..%2f..%2fetc/archivo").status_code == 404
+
+
+def test_curved_shapes(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("c.png", _png(120, 60), "image/png")}).json()
+    arc = client.post("/api/litofanias", json={"imagen_id": meta["id"], "forma": "arco", "ancho": 60, "angulo": 90, "resolucion": 0.5}).json()
+    assert arc["radio_mm"] > 0 and client.get(arc["stl"]).status_code == 200
+
+    cyl = client.post("/api/litofanias", json={"imagen_id": meta["id"], "forma": "cilindro", "diametro": 40, "resolucion": 0.5}).json()
+    assert abs(cyl["medidas_mm"][0] - 40) < 0.5          # diámetro exterior
+    assert "litofania-cilindro-c.stl" in client.get(cyl["stl"]).headers["content-disposition"]
+    assert client.get(cyl["vista"]).status_code == 200
+    assert client.get(f"/api/litofanias/{meta['id']}/esfera.stl").status_code == 404

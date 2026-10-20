@@ -41,8 +41,12 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "ancho", "min", "max", "resolucion", "marco"];
-const DEFAULTS = { brillo: 1, contraste: 1, gamma: 1, invertir: false, ancho: 150, min: 0.8, max: 3, resolucion: 0.2, marco: 3 };
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "ancho", "angulo", "diametro", "min", "max", "resolucion", "marco"];
+const DEFAULTS = {
+  brillo: 1, contraste: 1, gamma: 1, invertir: false,
+  forma: "plana", ancho: 150, angulo: 120, diametro: 80, min: 0.8, max: 3, resolucion: 0.2, marco: 3,
+};
+const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(`lito.${k}`)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(`lito.${k}`, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
@@ -52,7 +56,7 @@ function readParams() {
   const p = {};
   for (const k of PARAMS) {
     const el = $(`#${k}`);
-    p[k] = el.type === "checkbox" ? el.checked : Number(el.value);
+    p[k] = el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? el.value : Number(el.value);
   }
   return p;
 }
@@ -66,16 +70,24 @@ function writeParams(p) {
 function showSliderValues() {
   $$("output[data-for]").forEach((o) => (o.textContent = Number($(`#${o.dataset.for}`).value).toFixed(2)));
 }
+function showShapeFields() {
+  const forma = $("#forma").value;
+  $$("[data-shapes]").forEach((el) => (el.hidden = !el.dataset.shapes.split(" ").includes(forma)));
+}
+/* Ancho de la imagen ya colocada: el de la plana, la longitud del arco o el perímetro del cilindro. */
+const developed = (p) => (p.forma === "cilindro" ? Math.PI * p.diametro : p.ancho);
+
 function validParams(p) {
   let ok = true;
-  for (const k of ["ancho", "min", "max", "resolucion", "marco"]) {
+  for (const k of ["ancho", "angulo", "diametro", "min", "max", "resolucion", "marco"]) {
     const el = $(`#${k}`);
-    const bad = !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
+    const bad = !el.closest("label").hidden && !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
     el.classList.toggle("bad", bad);
     ok &&= !bad;
   }
   if (p.min >= p.max) { $("#min").classList.add("bad"); $("#max").classList.add("bad"); ok = false; }
-  if (p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
+  if (p.forma !== "cilindro" && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
+  if (p.forma === "cilindro" && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
   return ok;
 }
 
@@ -144,18 +156,20 @@ function draw() {
   updateSummary(p, ok);
   if (!current || !source.complete || !source.naturalWidth) return;
 
-  const inner = Math.max(5, p.ancho - 2 * p.marco);
+  const wrap = p.forma === "cilindro";
+  const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * p.marco));
   const scale = Math.min(1, PREVIEW_MAX / Math.max(source.naturalWidth, source.naturalHeight));
   const w = Math.max(2, Math.round(source.naturalWidth * scale));
   const h = Math.max(2, Math.round(source.naturalHeight * scale));
   const pad = Math.round((p.marco / inner) * w);
+  const padX = wrap ? 0 : pad;
 
   const cv = $("#cvLit");
-  cv.width = w + 2 * pad;
+  cv.width = w + 2 * padX;
   cv.height = h + 2 * pad;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(source, pad, pad, w, h);
-  const img = ctx.getImageData(pad, pad, w, h);
+  ctx.drawImage(source, padX, pad, w, h);
+  const img = ctx.getImageData(padX, pad, w, h);
   const d = img.data;
 
   const gray = new Float32Array(w * h);
@@ -179,22 +193,38 @@ function draw() {
   const edge = light(p.max);
   ctx.fillStyle = `rgb(${255 * edge},${222 * edge},${170 * edge})`;
   ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.putImageData(img, pad, pad);
+  ctx.putImageData(img, padX, pad);
 }
 
 function updateSummary(p, ok) {
   if (!current) { $("#summary").textContent = ""; return; }
   if (!ok) { $("#summary").textContent = "Revisa los valores marcados en rojo."; $("#btnStl").disabled = true; return; }
   $("#btnStl").disabled = false;
-  const cols = Math.max(2, Math.round((p.ancho - 2 * p.marco) / p.resolucion) + 1);
-  const rows = Math.max(2, Math.round((cols * current.alto) / current.ancho));
+  const wrap = p.forma === "cilindro";
+  const W = developed(p);
   const pad = Math.round(p.marco / p.resolucion);
-  const C = cols + 2 * pad, R = rows + 2 * pad;
-  const tris = 4 * (R - 1) * (C - 1) + 4 * (R + C - 2);
+  const cols = wrap ? Math.round(W / p.resolucion) : Math.max(2, Math.round((W - 2 * p.marco) / p.resolucion) + 1) + 2 * pad;
+  const imgCols = wrap ? cols : cols - 2 * pad;
+  const rows = Math.max(2, Math.round((imgCols * current.alto) / current.ancho)) + 2 * pad;
+  const H = (rows - 1) * p.resolucion;
+  const tris = 4 * rows * cols;
   const fmt = (n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
-  $("#summary").textContent =
-    `${fmt((C - 1) * p.resolucion)} × ${fmt((R - 1) * p.resolucion)} × ${fmt(p.max)} mm · unos ${fmt(tris / 1e6)} millones de triángulos`;
-  if ((R - 1) * p.resolucion > 220) $("#summary").textContent += " · más alta que la cama de 220 mm";
+
+  let size, onBed;
+  if (p.forma === "plana") {
+    size = `${fmt(W)} × ${fmt(H)} × ${fmt(p.max)} mm`;
+    onBed = W <= BED.x && H <= BED.z;
+  } else if (p.forma === "arco") {
+    const theta = (p.angulo * Math.PI) / 180, R = W / theta;
+    const chord = theta >= Math.PI ? 2 * R : 2 * R * Math.sin(theta / 2);
+    size = `arco de ${fmt(p.angulo)}° · ${fmt(chord)} mm de ancho × ${fmt(H)} mm de alto`;
+    onBed = chord <= BED.x && H <= BED.z;
+  } else {
+    size = `Ø ${fmt(p.diametro)} × ${fmt(H)} mm de alto`;
+    onBed = p.diametro <= BED.x && H <= BED.z;
+  }
+  $("#summary").textContent = `${size} · unos ${fmt(tris / 1e6)} millones de triángulos`;
+  if (!onBed) $("#summary").textContent += " · no cabe de pie en la Ender 3 V3 KE (220 × 220 × 240 mm)";
 }
 
 /* ───────── Generar STL y verlo en 3D ───────── */
@@ -207,15 +237,15 @@ async function generate() {
   const label = btn.lastChild.textContent;
   btn.lastChild.textContent = " Generando…";
   try {
-    const info = await (await api("POST", "/api/litofanias/plana", { imagen_id: current.id, ...p })).json();
-    const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES"));
+    const info = await (await api("POST", "/api/litofanias", { imagen_id: current.id, ...p })).json();
+    const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 }));
     const tri = info.triangulos.toLocaleString("es-ES");
     window.Visor.open({
       url: info.vista,
       name: current.nombre,
       details: `${w} × ${h} × ${d} mm · ${tri} triángulos en el STL`,
       download: info.stl,
-      thickness: info.grosor_mm,
+      radius: info.radio_mm,
     });
   } catch (e) {
     toast(e.message, "err");
@@ -241,7 +271,7 @@ $("#btnReset").addEventListener("click", () => {
 $("#btnStl").addEventListener("click", generate);
 $("#btnView").addEventListener("click", () => $("#file3d").click());
 $("#file3d").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) window.Visor.open({ file: f, name: f.name }); e.target.value = ""; });
-for (const k of PARAMS) $(`#${k}`).addEventListener("input", () => { showSliderValues(); queueDraw(); });
+for (const k of PARAMS) $(`#${k}`).addEventListener("input", () => { showSliderValues(); showShapeFields(); queueDraw(); });
 source.addEventListener("load", queueDraw);
 
 $("#btnQuit").addEventListener("click", async () => {
@@ -264,6 +294,7 @@ addEventListener("drop", (e) => {
 
 /* ───────── Arranque ───────── */
 writeParams({ ...DEFAULTS, ...(store.get("params") || {}) });
+showShapeFields();
 loadImages().then(() => {
   const last = images.find((m) => m.id === store.get("ultima")) || images[0];
   if (last) select(last);
