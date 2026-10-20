@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from app import storage
 from litofania.contours import prepare_mask
+from litofania.collage import MAX_PHOTOS, Photo
 from litofania.generate import generate, generate_sphere
 from litofania.heightmap import FlatParams
 from litofania import printing
@@ -38,13 +39,34 @@ storage.ensure_dirs()
 SERVER = None  # lo pone run.py para poder cerrar la app desde el botón de apagado
 
 
+class CollageItem(BaseModel):
+    """Una foto del collage con su propio giro, recorte y encuadre dentro de su celda."""
+    imagen_id: str
+    girar: Literal[0, 90, 180, 270] = 0
+    recorte: tuple[float, float, float, float] | None = None
+    zoom: float = Field(1.0, ge=0.2, le=8)
+    centro_x: float = Field(0.5, ge=0, le=1)
+    centro_y: float = Field(0.5, ge=0, le=1)
+
+
 class LitoRequest(BaseModel):
     imagen_id: str
     forma: Literal["plana", "arco", "cilindro", "esfera", "cupula"] = "plana"
     ancho: float = Field(150.0, ge=20, le=400)      # plana y arco: ancho desarrollado
     angulo: float = Field(120.0, ge=30, le=300)     # arco
-    contorno: Literal["rectangulo", "redondeado", "circulo", "ovalo", "corazon", "propia"] = "rectangulo"   # plana
+    contorno: Literal["rectangulo", "redondeado", "circulo", "ovalo", "corazon", "estrella", "poligono",
+                      "propia"] = "rectangulo"      # plana
     mascara_id: str | None = None                   # plana con contorno «propia»
+    puntas: int = Field(5, ge=3, le=20)             # estrella
+    interior: float = Field(50.0, ge=20, le=90)     # estrella: hondura de los valles, % del radio de las puntas
+    lados: int = Field(6, ge=3, le=12)              # polígono
+    base_plana: float = Field(0.0, ge=0, le=40)     # corazón: % de la punta que se corta para apoyar plano
+    colgar: bool = False                            # plana: pestaña con agujero arriba para colgarla
+    colgar_ancho: float = Field(14.0, ge=8, le=40)
+    colgar_agujero: float = Field(5.0, ge=2, le=30)
+    collage: list[CollageItem] = Field(default_factory=list, max_length=MAX_PHOTOS)   # varias fotos (2 o más)
+    collage_filas: int = Field(1, ge=1, le=4)       # plana: filas del collage
+    separacion: float = Field(2.0, ge=0, le=20)     # borde entre las fotos del collage
     zoom: float = Field(1.0, ge=0.2, le=8)            # plana: encuadre de la foto dentro de la pieza
     centro_x: float = Field(0.5, ge=0, le=1)
     centro_y: float = Field(0.5, ge=0, le=1)
@@ -249,6 +271,16 @@ def make_lithophane(req: LitoRequest) -> dict:
         if mask is None:
             raise HTTPException(422, "Elige o sube una máscara para el contorno propio")
 
+    if req.forma == "plana" and req.colgar and req.colgar_agujero > req.colgar_ancho - 4:
+        raise HTTPException(422, "El agujero para colgar debe ser al menos 4 mm más estrecho que la pestaña")
+    photos = []
+    if len(req.collage) >= 2:
+        for item in req.collage:
+            ph = storage.image_path(item.imagen_id)
+            if ph is None:
+                raise HTTPException(404, "Una de las fotos del collage ya no existe")
+            photos.append(Photo(str(ph), item.girar, _crop(item.recorte), item.zoom, (item.centro_x, item.centro_y)))
+
     uses_fill = req.forma == "plana" or (req.forma in ("esfera", "cupula") and req.ajuste != "panoramica")
     fill = _fill(req) if uses_fill else Fill()
     p = FlatParams(
@@ -258,15 +290,22 @@ def make_lithophane(req: LitoRequest) -> dict:
     )
     name = f"{req.imagen_id}-{req.forma}"
 
+    contour_opts = {"points": req.puntas, "inner": req.interior / 100, "sides": req.lados, "flat": req.base_plana / 100}
+    tab = (req.colgar_ancho, req.colgar_agujero) if req.colgar and req.forma == "plana" else None
+
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
             return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura,
-                                   fill, req.texto, req.texto_mm, req.relieve == "fuera")
+                                   fill, req.texto, req.texto_mm, req.relieve == "fuera", photos, req.separacion)
         return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno,
                         str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), fill,
-                        req.texto, req.texto_mm, req.relieve == "fuera")
+                        req.texto, req.texto_mm, req.relieve == "fuera", contour_opts, tab, photos,
+                        req.collage_filas, req.separacion)
 
-    r = build(storage.MODELS / f"{name}.stl", p)
+    try:
+        r = build(storage.MODELS / f"{name}.stl", p)
+    except ValueError as e:   # el collage no cabe
+        raise HTTPException(422, str(e))
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
     preview_res = max(p.mm_per_px, math.sqrt(4 * width * (r.height_mm or width) / PREVIEW_TRIANGLES))
     build(storage.MODELS / f"{name}-vista.stl", replace(p, mm_per_px=preview_res))
@@ -278,6 +317,7 @@ def make_lithophane(req: LitoRequest) -> dict:
     (storage.MODELS / f"{name}.json").write_text(json.dumps({
         "forma": req.forma, "medidas_mm": size, "grosor_max": p.max_mm, "marco": req.marco,
         "radio_mm": r.radius_mm, "angulo": req.angulo, "agujero": req.agujero, "contorno": r.outline,
+        "pestana_mm": r.tab_mm,
     }), encoding="utf-8")
 
     base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
@@ -312,6 +352,8 @@ def make_accessory(req: AccessoryRequest) -> dict:
     m = json.loads(meta_path.read_text(encoding="utf-8"))
     w, h, _ = m["medidas_mm"]
     t, c = m["grosor_max"], req.holgura
+    if req.forma == "plana" and m.get("pestana_mm"):
+        raise HTTPException(422, "La pieza con pestaña para colgar no entra en la caja de luz: quítale la pestaña y vuelve a generarla")
     if req.forma == "plana":
         a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"))
     elif req.forma == "arco":
@@ -393,7 +435,7 @@ def save_preset(nombre: str, ajustes: dict) -> dict:
     nombre = nombre.strip()
     if not nombre or len(nombre) > 40:
         raise HTTPException(422, "El nombre de la plantilla debe tener entre 1 y 40 caracteres")
-    allowed = set(LitoRequest.model_fields) - {"imagen_id", "mascara_id"}
+    allowed = set(LitoRequest.model_fields) - {"imagen_id", "mascara_id", "collage"}
     clean = {k: v for k, v in ajustes.items() if k in allowed}
     presets = storage.load_presets()
     presets[nombre] = clean

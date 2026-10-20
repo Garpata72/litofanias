@@ -182,3 +182,43 @@ def test_texture_fill(client):
     assert client.post("/api/litofanias", json={**body, "zoom": 0.5}).status_code == 200
     assert client.post("/api/litofanias", json={**body, "forma": "esfera", "ajuste": "relleno"}).status_code == 200
     assert client.post("/api/litofanias", json={**body, "textura_id": None}).status_code == 422
+
+
+def test_star_polygon_heart_and_hanging_tab(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "ancho": 60, "resolucion": 0.5, "marco": 2}
+    for extra in ({"contorno": "estrella", "puntas": 6, "interior": 40}, {"contorno": "poligono", "lados": 3},
+                  {"contorno": "corazon", "base_plana": 20}, {"contorno": "corazon", "colgar": True},
+                  {"colgar": True, "texto": "Hola"}):
+        r = client.post("/api/litofanias", json={**base, **extra})
+        assert r.status_code == 200, (extra, r.text)
+        assert _closed(client.get(r.json()["stl"]).content), extra
+    plain = client.post("/api/litofanias", json=base).json()
+    tab = client.post("/api/litofanias", json={**base, "colgar": True, "colgar_ancho": 16}).json()
+    assert 16 <= tab["medidas_mm"][1] - plain["medidas_mm"][1] <= 18   # la pestaña sale por arriba
+    assert client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "plana"}).status_code == 422
+    bad = client.post("/api/litofanias", json={**base, "colgar": True, "colgar_ancho": 10, "colgar_agujero": 8})
+    assert bad.status_code == 422
+
+
+def test_collage(client):
+    ids = [client.post("/api/imagenes", files={"archivo": (f"f{k}.png", _png(60 + 20 * k, 40), "image/png")}).json()["id"]
+           for k in range(3)]
+    items = [{"imagen_id": i} for i in ids]
+    items[1].update(girar=90, recorte=[0.1, 0.1, 0.8, 0.8], zoom=0.7)
+    base = {"imagen_id": ids[0], "collage": items, "resolucion": 0.5, "separacion": 3}
+    single = client.post("/api/litofanias", json={**base, "collage": [], "ancho": 90, "marco": 2}).json()
+    row = client.post("/api/litofanias", json={**base, "ancho": 90, "marco": 2}).json()
+    assert row["medidas_mm"][0] == 90 and row["medidas_mm"][1] < single["medidas_mm"][1]   # tres en fila: más bajas
+    grid = client.post("/api/litofanias", json={**base, "ancho": 90, "marco": 2, "collage_filas": 2}).json()
+    assert grid["medidas_mm"][1] > row["medidas_mm"][1]
+    for extra in ({"contorno": "corazon"}, {"forma": "arco"}, {"forma": "cilindro", "diametro": 50},
+                  {"forma": "esfera", "diametro": 50, "agujero": 20, "cobertura": 240},
+                  {"forma": "cupula", "diametro": 50, "ajuste": "panoramica"}):
+        r = client.post("/api/litofanias", json={**base, "ancho": 90, **extra})
+        assert r.status_code == 200, (extra, r.text)
+        assert _closed(client.get(r.json()["stl"]).content), extra
+    gone = client.post("/api/litofanias", json={**base, "collage": items + [{"imagen_id": "noexiste"}]})
+    assert gone.status_code == 404
+    tight = client.post("/api/litofanias", json={**base, "ancho": 30, "marco": 2, "separacion": 12})
+    assert tight.status_code == 422

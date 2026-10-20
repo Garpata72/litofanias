@@ -89,6 +89,13 @@ body.side-hidden #side { display: none; }
 }
 .thumbs button:hover { border-color: var(--line-hi); }
 .thumbs button.sel { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+.thumbs button { position: relative; }
+.thumbs button .x {
+  position: absolute; top: 1px; right: 1px; width: 1.1rem; height: 1.1rem; line-height: 1.05rem; border-radius: 50%;
+  background: rgba(14, 17, 22, .85); color: #fff; font-size: .8rem; text-align: center;
+}
+.thumbs button .x:hover { background: var(--coral); }
+.thumbs button .n { position: absolute; left: 2px; bottom: 1px; font-size: .7rem; color: #fff; text-shadow: 0 0 3px #000; }
 .thumbs .none { grid-column: 1 / -1; color: var(--mute); font-size: .82rem; padding: .2rem .15rem; }
 
 /* Campos */
@@ -204,3 +211,4 @@ body.side-hidden #side { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+#collageList button { background-size: cover; }

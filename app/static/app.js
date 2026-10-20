@@ -45,10 +45,11 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relieve", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "puntas", "interior", "lados", "base_plana", "colgar", "colgar_ancho", "colgar_agujero", "collage", "collage_filas", "separacion", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relieve", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
-  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relieve: "dentro", relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
+  forma: "plana", contorno: "rectangulo", puntas: 5, interior: 50, lados: 6, base_plana: 0,
+  colgar: false, colgar_ancho: 14, colgar_agujero: 5, collage: false, collage_filas: 1, separacion: 2, ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relieve: "dentro", relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
   min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
@@ -85,6 +86,8 @@ function showShapeFields() {
       || (el.dataset.fill && el.dataset.fill !== $("#relleno").value);
   });
   $$("[data-text]").forEach((el) => (el.hidden = !$("#texto").value.trim()));
+  $$("[data-hang]").forEach((el) => (el.hidden = forma !== "plana" || !$("#colgar").checked));
+  $$("[data-collage]").forEach((el) => (el.hidden = !$("#collage").checked));
   updateAccessoryButton();
 }
 /* Ancho de la imagen ya colocada: el de la plana, la longitud del arco o el perímetro del cilindro. */
@@ -94,9 +97,10 @@ const developed = (p) => (ROUND.includes(p.forma) ? Math.PI * p.diametro : p.anc
 
 function validParams(p) {
   let ok = true;
-  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "textura_mm", "texto_mm", "min", "max", "resolucion", "marco"]) {
+  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "textura_mm", "texto_mm", "min", "max", "resolucion", "marco",
+    "puntas", "interior", "lados", "base_plana", "colgar_ancho", "colgar_agujero", "collage_filas", "separacion"]) {
     const el = $(`#${k}`);
-    const bad = !el.closest("label").hidden && !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
+    const bad = !el.closest("[hidden]") && !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
     el.classList.toggle("bad", bad);
     ok &&= !bad;
   }
@@ -104,7 +108,9 @@ function validParams(p) {
   if (!ROUND.includes(p.forma) && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
   if (ROUND.includes(p.forma) && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
   if (p.forma === "esfera" && p.agujero >= p.diametro - 10) { $("#agujero").classList.add("bad"); ok = false; }
+  if (p.forma === "plana" && p.colgar && p.colgar_agujero > p.colgar_ancho - 4) { $("#colgar_agujero").classList.add("bad"); ok = false; }
   if (needsMask(p) || needsTexture(p)) ok = false;
+  if (collageOn(p) && !collageGeom(p).ok) { $("#separacion").classList.add("bad"); ok = false; }
   return ok;
 }
 
@@ -239,6 +245,150 @@ async function uploadMask(file) {
   } catch (e) { toast(e.message, "err"); }
 }
 
+/* ───────── Varias fotos en una pieza (collage) ─────────
+   Cada foto guarda su giro, recorte y encuadre como cuando se abre sola; aquí solo se elige cuáles y en qué orden. */
+let collageIds = store.get("collage") || [];
+const collageOn = (p) => p.collage && collageIds.length >= 2;
+const photoCache = new Map();   // id → { img, canvas, key }: foto girada y recortada de las que no están abiertas
+
+function saveCollage() {
+  store.set("collage", collageIds);
+  renderCollage();
+  showShapeFields();
+  setFrame({}, false);
+}
+function renderCollage() {
+  const box = $("#collageList");
+  box.innerHTML = collageIds.length ? "" : `<div class="none">Abre una foto y añádela; hacen falta al menos dos.</div>`;
+  collageIds.forEach((id, n) => {
+    const m = images.find((x) => x.id === id);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.title = m ? `${n + 1}. ${m.nombre}` : "";
+    b.style.backgroundImage = `url(/api/imagenes/${id}/archivo)`;
+    b.classList.toggle("sel", current?.id === id);
+    b.innerHTML = `<span class="n">${n + 1}</span><span class="x" role="button" aria-label="Quitar del collage" title="Quitar del collage">×</span>`;
+    b.addEventListener("click", (e) => {
+      if (e.target.classList.contains("x")) { collageIds = collageIds.filter((x) => x !== id); saveCollage(); return; }
+      if (m) select(m);
+    });
+    box.append(b);
+  });
+  $("#btnCollageAdd").disabled = !current || collageIds.includes(current.id) || collageIds.length >= 8;
+}
+$("#btnCollageAdd").addEventListener("click", () => {
+  if (!current || collageIds.includes(current.id)) return;
+  collageIds = [...collageIds, current.id];
+  $("#collage").checked = true;
+  saveCollage();
+});
+
+/* Foto lista para el collage: la abierta es `src`; las demás se giran y recortan aquí con lo guardado. */
+function photoCanvas(id) {
+  if (id === current?.id && srcVersion) return src;
+  const c = { x: 0, y: 0, w: 1, h: 1, rot: 0, ...(store.get(`recorte.${id}`) || {}) };
+  const key = JSON.stringify(c);
+  let e = photoCache.get(id);
+  if (!e) {
+    e = { img: new Image(), canvas: null, key: "" };
+    e.img.addEventListener("load", () => { e.key = ""; queueDraw(); });
+    e.img.src = `/api/imagenes/${id}/archivo`;
+    photoCache.set(id, e);
+  }
+  if (!e.img.complete || !e.img.naturalWidth) return null;
+  if (e.key !== key) {
+    const W0 = e.img.naturalWidth, H0 = e.img.naturalHeight, side = c.rot % 180 !== 0;
+    const k = Math.min(1, 800 / Math.max(W0, H0));
+    const rw = Math.round((side ? H0 : W0) * k), rh = Math.round((side ? W0 : H0) * k);
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(2, Math.round(c.w * rw));
+    cv.height = Math.max(2, Math.round(c.h * rh));
+    const ctx = cv.getContext("2d");
+    ctx.translate(-c.x * rw + rw / 2, -c.y * rh + rh / 2);
+    ctx.rotate((c.rot * Math.PI) / 180);
+    ctx.drawImage(e.img, (-W0 * k) / 2, (-H0 * k) / 2, W0 * k, H0 * k);
+    e.canvas = cv;
+    e.key = key;
+  }
+  return e.canvas;
+}
+const photoFrame = (id) => (id === current?.id ? frame : { zoom: 1, cx: 0.5, cy: 0.5, ...(store.get(`encuadre.${id}`) || {}) });
+
+/* Mismo reparto que litofania/collage.py (layout): si se cambia uno, cambiar el otro. */
+function collageLayout(n, cols, rowsWanted, sep, wrap, aspect, rows = null) {
+  const nc = Math.ceil(n / Math.max(1, Math.min(rowsWanted, n)));
+  const nr = Math.ceil(n / nc);
+  const cw = (cols - (wrap ? nc : nc - 1) * sep) / nc;
+  if (rows === null) rows = Math.max(2, Math.round(nr * (cw / aspect) + (nr - 1) * sep));
+  const ch = (rows - (nr - 1) * sep) / nr;
+  const off = wrap ? (cols - cw) / 2 : 0;
+  const slots = [];
+  for (let i = 0; i < nr; i++)
+    for (let j = 0; j < nc; j++) slots.push({ x: off + j * (cw + sep), y: i * (ch + sep), w: cw, h: ch });
+  return { rows, slots, ok: cw >= 2 && ch >= 2 };
+}
+
+/* Medidas del collage en milímetros: ancho y alto de la zona de fotos, huecos y proporción de cada hueco. */
+function collageGeom(p) {
+  const first = photoCanvas(collageIds[0]);
+  const m0 = images.find((x) => x.id === collageIds[0]);
+  const a0 = first ? first.width / first.height : m0 ? m0.ancho / m0.alto : 1;
+  const wrap = p.forma === "cilindro" || (SPHERE.includes(p.forma) && p.ajuste === "panoramica");
+  const cut = p.forma === "plana" && p.contorno !== "rectangulo";
+  let W, H = null;
+  if (SPHERE.includes(p.forma)) {
+    const R = p.diametro / 2;
+    W = Math.PI * p.diametro * (wrap ? 1 : p.cobertura / 360);
+    if (wrap) H = R * (Math.PI / 2 - (p.forma === "cupula" ? 0 : -Math.acos(Math.min(1, p.agujero / p.diametro))));
+  } else W = wrap ? developed(p) : cut ? p.ancho : developed(p) - 2 * p.marco;
+  if (customMask(p) && maskMeta()) H = W / (maskMeta().ancho / maskMeta().alto);
+  const L = collageLayout(collageIds.length, W, p.forma === "plana" ? p.collage_filas : 1, p.separacion, wrap, a0, H);
+  return { W, H: L.rows, slots: L.slots, wrap, ok: L.ok, cellAspect: L.slots[0].w / L.slots[0].h };
+}
+
+/* Collage dibujado a `q` píxeles por mm: fotos en sus huecos (transparente donde no hay foto) y los huecos
+   en píxeles de la vista previa para pintar la separación. */
+function collageComposite(p, q) {
+  const g = collageGeom(p);
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(2, Math.round(g.W * q));
+  cv.height = Math.max(2, Math.round(g.H * q));
+  const ctx = cv.getContext("2d");
+  const rects = g.slots.map((s) => ({ x: s.x * q, y: s.y * q, w: s.w * q, h: s.h * q }));
+  collageIds.forEach((id, n) => {
+    const P = photoCanvas(id), r = rects[n];
+    if (!P || !r) return;
+    const f = photoFrame(id), a = r.w / r.h;
+    let w, h;
+    if (P.width / P.height > a) { h = P.height / f.zoom; w = h * a; } else { w = P.width / f.zoom; h = w / a; }
+    const k = r.w / w, x = f.cx * P.width - w / 2, y = f.cy * P.height - h / 2;
+    for (const dx of g.wrap ? [0, -cv.width] : [0]) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(r.x + dx, r.y, r.w, r.h);
+      ctx.clip();
+      ctx.drawImage(P, r.x + dx - x * k, r.y - y * k, P.width * k, P.height * k);
+      ctx.restore();
+    }
+  });
+  return { canvas: cv, rects, wrap: g.wrap };
+}
+/* 1 donde va foto (o su hueco), 0 en la separación, en una rejilla w × h que cubre el collage. */
+function slotMask(col, w, h) {
+  const m = new Uint8Array(w * h);
+  const k = w / col.canvas.width;
+  for (const r of col.rects) {
+    const x0 = Math.round(r.x * k), x1 = Math.round((r.x + r.w) * k);
+    const y0 = Math.max(0, Math.round(r.y * k)), y1 = Math.min(h, Math.round((r.y + r.h) * k));
+    for (let i = y0; i < y1; i++)
+      for (let x = x0; x < x1; x++) {
+        const j = col.wrap ? ((x % w) + w) % w : x;
+        if (j >= 0 && j < w) m[i * w + j] = 1;
+      }
+  }
+  return m;
+}
+
 const ZOOM = { min: 0.25, max: 4 };
 
 /* ───────── Encuadre ─────────
@@ -247,10 +397,13 @@ const ZOOM = { min: 0.25, max: 4 };
 function pieceAspect(p) {
   return customMask(p) && maskMeta() ? maskMeta().ancho / maskMeta().alto : src.width / src.height;
 }
+/* En el collage cada foto se encuadra en su hueco (en cualquier forma); si no, solo la plana se encuadra. */
+const inCollage = (p) => collageOn(p) && collageIds.includes(current?.id);
+const framable = (p) => p.forma === "plana" || inCollage(p);
 function cropWindow(p) {
   const W = src.width, H = src.height;
-  if (p.forma !== "plana") return { x: 0, y: 0, w: W, h: H };
-  const a = pieceAspect(p), z = frame.zoom;
+  if (!framable(p)) return { x: 0, y: 0, w: W, h: H };
+  const a = inCollage(p) ? collageGeom(p).cellAspect : pieceAspect(p), z = frame.zoom;
   let w, h;
   if (W / H > a) { h = H / z; w = h * a; } else { w = W / z; h = w / a; }
   return { x: frame.cx * W - w / 2, y: frame.cy * H - h / 2, w, h };
@@ -278,6 +431,8 @@ async function loadImages() {
     b.addEventListener("click", () => select(m));
     box.append(b);
   }
+  collageIds = collageIds.filter((id) => images.some((m) => m.id === id));
+  renderCollage();
 }
 
 function select(meta) {
@@ -296,6 +451,7 @@ function select(meta) {
   showSliderValues();
   source.src = `/api/imagenes/${meta.id}/archivo`;
   $$("#images button").forEach((b) => b.classList.toggle("sel", b.title === meta.nombre && b.style.backgroundImage.includes(meta.id)));
+  renderCollage();
   if (innerWidth <= 900) document.body.classList.remove("side-open");
 }
 
@@ -313,10 +469,34 @@ async function upload(file) {
 
 /* ───────── Contornos de la plana ─────────
    Mismas fórmulas que litofania/contours.py: si se cambia una, cambiar la otra. */
-function contourMask(rows, cols, contour) {
+function polygonPoints(p) {
+  const pts = [];
+  if (p.contorno === "estrella") {
+    for (let k = 0; k < 2 * p.puntas; k++) {
+      const r = k % 2 ? p.interior / 100 : 1, a = Math.PI / 2 + (Math.PI * k) / p.puntas;
+      pts.push([r * Math.cos(a), r * Math.sin(a)]);
+    }
+  } else {
+    for (let k = 0; k < p.lados; k++) {
+      const a = -Math.PI / 2 + Math.PI / p.lados + (2 * Math.PI * k) / p.lados;
+      pts.push([Math.cos(a), Math.sin(a)]);
+    }
+  }
+  return pts;
+}
+function contourMask(rows, cols, p) {
+  const contour = p.contorno;
   const m = new Uint8Array(rows * cols).fill(1);
   if (contour === "rectangulo") return m;
   const aspect = (cols - 1) / (rows - 1);
+  let poly = null;
+  if (contour === "estrella" || contour === "poligono") {   // centrado y sin deformar, como el círculo
+    const pts = polygonPoints(p), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const s = Math.min(aspect / ((x1 - x0) / 2), 1 / ((y1 - y0) / 2));
+    poly = pts.map(([x, y]) => [(x - (x0 + x1) / 2) * s, (y - (y0 + y1) / 2) * s]);
+  }
+  const flatBase = p.base_plana / 100;
   for (let i = 0; i < rows; i++) {
     const v = 1 - (2 * i) / (rows - 1);
     for (let j = 0; j < cols; j++) {
@@ -330,8 +510,15 @@ function contourMask(rows, cols, contour) {
         const w = aspect, h = 1, r = 0.15 * 2 * Math.min(w, h);
         const x = Math.abs(u) * w, y = Math.abs(v) * h;
         inside = x <= w - r || y <= h - r || (x - (w - r)) ** 2 + (y - (h - r)) ** 2 <= r * r;
+      } else if (poly) {
+        const x = u * aspect;
+        inside = false;
+        for (let a = 0, b = poly.length - 1; a < poly.length; b = a++) {
+          const [xi, yi] = poly[a], [xj, yj] = poly[b];
+          if (yi !== yj && (yi > v) !== (yj > v) && x < ((xj - xi) * (v - yi)) / (yj - yi) + xi) inside = !inside;
+        }
       } else {
-        const x = u * 1.16, y = ((v + 1) / 2) * 2.27 - 1.02;
+        const x = u * 1.16, y = (flatBase + ((v + 1) / 2) * (1 - flatBase)) * 2.27 - 1.02;
         inside = (x * x + y * y - 1) ** 3 - x * x * y ** 3 <= 0;
       }
       m[i * cols + j] = inside ? 1 : 0;
@@ -380,15 +567,21 @@ function draw() {
   const border = SPHERE.includes(p.forma) || cut ? 0 : p.marco;
   const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * border));
   const win = cropWindow(p);
-  const scale = Math.min(PREVIEW_MAX / Math.max(win.w, win.h), flat ? 4 : 1);
-  const w = Math.max(2, Math.round(win.w * scale));
-  const h = Math.max(2, Math.round(win.h * scale));
+  const col = collageOn(p) ? collageGeom(p) : null;   // varias fotos: la vista a contraluz es el collage entero
+  const area = col ? { w: col.W, h: col.H } : win;
+  const scale = Math.min(PREVIEW_MAX / Math.max(area.w, area.h), flat && !col ? 4 : Infinity);
+  const w = Math.max(2, Math.round(area.w * scale));
+  const h = Math.max(2, Math.round(area.h * scale));
   const pad = Math.round((border / inner) * w);
   const padX = wrap ? 0 : pad;
   const mask = cut ? shapeMask(p, h, w) : null;
   const band = cut ? erode(mask, h, w, Math.round((p.marco / Math.max(5, p.ancho)) * w)) : null;
   const fill = flat ? fillLayer(p, w, h, (cut ? Math.max(5, p.ancho) : inner) / w) : null;
-  drawFrame(p, win, w, h, mask, band, fill);
+  if (!col) drawFrame(p, win, w, h, mask, band, fill);
+  else {   // la foto abierta, en la proporción de su hueco del collage
+    const fs = Math.min(PREVIEW_MAX / Math.max(win.w, win.h), 4);
+    drawFrame(p, win, Math.max(2, Math.round(win.w * fs)), Math.max(2, Math.round(win.h * fs)), null, null, null);
+  }
 
   // Capa de la foto (transparente donde no llega) y gris del relleno debajo.
   const k = w / win.w;
@@ -396,11 +589,14 @@ function draw() {
   layer.width = w;
   layer.height = h;
   const lctx = layer.getContext("2d", { willReadFrequently: true });
-  lctx.drawImage(src, -win.x * k, -win.y * k, src.width * k, src.height * k);
+  const comp = col ? collageComposite(p, w / col.W) : null;
+  if (comp) lctx.drawImage(comp.canvas, 0, 0, w, h);
+  else lctx.drawImage(src, -win.x * k, -win.y * k, src.width * k, src.height * k);
   const d = lctx.getImageData(0, 0, w, h).data;
   const bg = fill ? fillGray(fill, w, h) : null;
 
-  const mean = sourceMean(p.brillo);
+  // El servidor aplica el contraste a cada foto con su propia media; aquí, para abreviar, con la del collage.
+  const mean = comp ? sourceMean(p.brillo, comp.canvas, -1) : sourceMean(p.brillo);
   const tMin = Math.exp(-ABSORB * p.min);
   const light = (t) => Math.exp(-ABSORB * t) / tMin;
 
@@ -430,6 +626,10 @@ function draw() {
     o[i] = 255 * L; o[i + 1] = 222 * L; o[i + 2] = 170 * L; o[i + 3] = 255;
   }
   const edge = light(p.max);
+  if (comp) {   // separación entre las fotos, a grosor máximo
+    const sm = slotMask(comp, w, h);
+    for (let j = 0; j < sm.length; j++) if (!sm[j]) { const i = 4 * j; o[i] = 255 * edge; o[i + 1] = 222 * edge; o[i + 2] = 170 * edge; }
+  }
   if (cut) {
     for (let j = 0; j < mask.length; j++) {
       const i = 4 * j;
@@ -459,6 +659,34 @@ function draw() {
     while (bottom - bh + 1 > 0 && !fits(bottom)) bottom--;
     engrave(ctx, text, size, padX + c0, pad + Math.max(0, bottom - bh + 1), bw, bh, lit(p.max), lit(p.min), true);
   }
+  if (flat && p.colgar) drawTab(cv, p, pxPerMm, mask, lit(p.max));
+}
+
+/* Pestaña para colgar, como contours.add_tab: círculo con agujero encima y un vástago que entra en la pieza. */
+function drawTab(cv, p, pxmm, mask, color) {
+  const R = (p.colgar_ancho / 2) * pxmm, r = (p.colgar_agujero / 2) * pxmm, extra = Math.ceil(2 * R) + 1;
+  const old = document.createElement("canvas");
+  old.width = cv.width;
+  old.height = cv.height;
+  old.getContext("2d").drawImage(cv, 0, 0);
+  cv.height += extra;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(old, 0, extra);
+  const c = cv.width / 2, cy = R + 0.5;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(c, cy, R, 0, 2 * Math.PI);
+  ctx.fill();
+  for (let x = Math.max(0, Math.floor(c - R)); x <= Math.min(cv.width - 1, Math.ceil(c + R)); x++) {
+    let first = 0;
+    if (mask) { const W = cv.width, H = mask.length / W; while (first < H && !mask[first * W + x]) first++; }
+    ctx.fillRect(x, cy, 1, extra + first + 2 - cy);
+  }
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.beginPath();
+  ctx.arc(c, cy, r, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
 }
 
 /* Texto grabado con la misma fuente que el STL (la sirve la app): banda gruesa y letras finas. */
@@ -488,18 +716,19 @@ function engrave(ctx, text, px, x, y, bw, bh, dark, light, fixedWidth) {
 
 /* Media de gris de la foto entera tras el brillo, como hace Pillow con el contraste. */
 let statsFor = null, statsGray = null;
-function sourceMean(brillo) {
-  if (statsFor !== srcVersion) {
+function sourceMean(brillo, img = src, version = srcVersion) {
+  if (statsFor !== version || version < 0) {
     const c = document.createElement("canvas");
-    const s = Math.min(1, 128 / Math.max(src.width, src.height));
-    c.width = Math.max(1, Math.round(src.width * s));
-    c.height = Math.max(1, Math.round(src.height * s));
+    const s = Math.min(1, 128 / Math.max(img.width, img.height));
+    c.width = Math.max(1, Math.round(img.width * s));
+    c.height = Math.max(1, Math.round(img.height * s));
     const ctx = c.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(src, 0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
     const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    statsGray = new Float32Array(d.length / 4);
-    for (let i = 0, j = 0; j < statsGray.length; i += 4, j++) statsGray[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    statsFor = srcVersion;
+    const gray = [];
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 127) gray.push(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+    statsGray = gray.length ? Float32Array.from(gray) : new Float32Array([128]);
+    statsFor = version;
   }
   let sum = 0;
   for (const g of statsGray) sum += Math.min(255, g * brillo);
@@ -537,7 +766,7 @@ function fillGray(fill, w, h) {
 
 /* Máscara de la pieza en la rejilla de la vista previa: un contorno de fórmula o la máscara subida. */
 function shapeMask(p, rows, cols) {
-  if (!customMask(p)) return contourMask(rows, cols, p.contorno);
+  if (!customMask(p)) return contourMask(rows, cols, p);
   const c = document.createElement("canvas");
   c.width = cols;
   c.height = rows;
@@ -583,10 +812,11 @@ function drawCrop() {
 let frameGeom = { w: 1, total: 1 };
 function drawFrame(p, win, w, h, mask, band, fill) {
   if (cropMode) { drawCrop(); return; }
-  const flat = p.forma === "plana";
+  const flat = framable(p);
   const cv = $("#cvFrame");
   cv.classList.toggle("movable", flat);
-  $("#capFrame").textContent = flat ? "Encuadre (arrastra la foto)" : fullCrop() && !crop.rot ? "Original" : "Foto recortada";
+  $("#capFrame").textContent = inCollage(p) ? `Foto ${collageIds.indexOf(current.id) + 1} del collage (arrastra para encuadrarla)`
+    : flat ? "Encuadre (arrastra la foto)" : fullCrop() && !crop.rot ? "Original" : "Foto recortada";
   const M = flat ? Math.round(0.2 * Math.max(w, h)) : 0;
   cv.width = w + 2 * M;
   cv.height = h + 2 * M;
@@ -626,6 +856,11 @@ function drawFrame(p, win, w, h, mask, band, fill) {
 }
 
 function updateSummary(p, ok) {
+  updateSummaryText(p, ok);
+  if (current && ok && p.collage) $("#summary").textContent += collageOn(p) ? ` · collage de ${collageIds.length} fotos`
+    : " · añade al menos dos fotos al collage (ahora va solo esta)";
+}
+function updateSummaryText(p, ok) {
   if (!current) { $("#summary").textContent = ""; return; }
   if (!ok) { $("#summary").textContent = needsMask(p) ? "Sube o elige una máscara para el contorno propio."
     : needsTexture(p) ? "Sube o elige una textura para el relleno." : "Revisa los valores marcados en rojo."; $("#btnStl").disabled = true; return; }
@@ -635,9 +870,12 @@ function updateSummary(p, ok) {
   const pad = Math.round(p.marco / p.resolucion);
   const cols = wrap ? Math.round(W / p.resolucion) : Math.max(2, Math.round((W - 2 * p.marco) / p.resolucion) + 1) + 2 * pad;
   const imgCols = wrap ? cols : cols - 2 * pad;
-  const rows = Math.max(2, Math.round(imgCols / (p.forma === "plana" ? pieceAspect(p) : src.width / src.height))) + 2 * pad;
+  const aspect = collageOn(p) ? (() => { const g = collageGeom(p); return g.W / g.H; })()
+    : p.forma === "plana" ? pieceAspect(p) : src.width / src.height;
+  const rows = Math.max(2, Math.round(imgCols / aspect)) + 2 * pad;
   const textBand = p.texto.trim() && !(p.forma === "plana" && p.contorno !== "rectangulo") ? p.texto_mm * (1 + 2 * TEXT_MARGIN) : 0;
-  const H = (rows - 1) * p.resolucion + textBand;
+  const tab = p.forma === "plana" && p.colgar ? (Math.ceil(p.colgar_ancho / p.resolucion) + 1) * p.resolucion : 0;
+  const H = (rows - 1) * p.resolucion + textBand + tab;
   const tris = 4 * rows * cols;
   const fmt = (n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
 
@@ -757,6 +995,11 @@ async function generate() {
   try {
     const info = await (await api("POST", "/api/litofanias", {
       imagen_id: current.id, ...p, mascara_id: customMask(p) ? maskId : null, textura_id: textureFill(p) ? textureId : null,
+      collage: collageOn(p) ? collageIds.map((id) => {
+        const c = id === current.id ? crop : { x: 0, y: 0, w: 1, h: 1, rot: 0, ...(store.get(`recorte.${id}`) || {}) };
+        const f = photoFrame(id), full = c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1;
+        return { imagen_id: id, girar: c.rot, recorte: full ? null : [c.x, c.y, c.w, c.h], zoom: f.zoom, centro_x: f.cx, centro_y: f.cy };
+      }) : [],
       zoom: frame.zoom, centro_x: frame.cx, centro_y: frame.cy,
       girar: crop.rot, recorte: fullCrop() ? null : [crop.x, crop.y, crop.w, crop.h],
     })).json();
@@ -824,7 +1067,7 @@ cvFrame.addEventListener("pointerdown", (e) => {
     }
     return;
   }
-  if (!current || readParams().forma !== "plana") return;
+  if (!current || !framable(readParams())) return;
   dragFrom = { x: e.clientX, y: e.clientY, cx: frame.cx, cy: frame.cy };
   cvFrame.setPointerCapture(e.pointerId);
 });
@@ -862,7 +1105,7 @@ const endDrag = () => {
 cvFrame.addEventListener("pointerup", endDrag);
 cvFrame.addEventListener("pointercancel", endDrag);
 cvFrame.addEventListener("wheel", (e) => {
-  if (!current || cropMode || readParams().forma !== "plana") return;
+  if (!current || cropMode || !framable(readParams())) return;
   e.preventDefault();
   setFrame({ zoom: frame.zoom * Math.exp(-e.deltaY * 0.0015) });
 }, { passive: false });
