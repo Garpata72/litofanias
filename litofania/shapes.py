@@ -48,7 +48,11 @@ def _place(t: np.ndarray, mm_per_px: float, shape: str, angle_deg: float):
     return ring(radius - t), ring(np.full_like(t, radius)), radius
 
 
-def build_solid(t: np.ndarray, mm_per_px: float, shape: str = "plana", angle_deg: float = 120.0) -> Solid:
+def build_solid(t: np.ndarray, mm_per_px: float, shape: str = "plana", angle_deg: float = 120.0,
+                mask: np.ndarray | None = None) -> Solid:
+    """`mask` (solo plana) recorta la pieza: se quedan los cuadros con sus cuatro esquinas dentro."""
+    if mask is not None:
+        return _masked_flat(t, mm_per_px, mask)
     rows, cols = t.shape
     closed = shape == "cilindro"
     front, back, radius = _place(t, mm_per_px, shape, angle_deg)
@@ -145,3 +149,32 @@ def build_sphere(t: np.ndarray, radius: float, lat_top: float, lat_bottom: float
     if signed_volume(verts, faces) < 0:
         faces = faces[:, ::-1].copy()
     return Solid(verts, faces, radius)
+
+
+def _masked_flat(t: np.ndarray, mm_per_px: float, mask: np.ndarray) -> Solid:
+    rows, cols = t.shape
+    front, back, _ = _place(t, mm_per_px, "plana", 0)
+    n = rows * cols
+    verts = np.vstack([front.reshape(-1, 3), back.reshape(-1, 3)])
+
+    idx = np.arange(n).reshape(rows, cols)
+    keep = (mask[:-1, :-1] & mask[:-1, 1:] & mask[1:, :-1] & mask[1:, 1:]).ravel()
+    v00, v01 = idx[:-1, :-1].ravel()[keep], idx[:-1, 1:].ravel()[keep]
+    v10, v11 = idx[1:, :-1].ravel()[keep], idx[1:, 1:].ravel()[keep]
+    front_faces = np.vstack([
+        np.column_stack([v10, v11, v01]),
+        np.column_stack([v10, v01, v00]),
+    ])
+    back_faces = front_faces[:, ::-1] + n
+
+    # Borde del recorte: aristas de la cara delantera cuya inversa no está en ningún triángulo.
+    edges = np.vstack([front_faces[:, [0, 1]], front_faces[:, [1, 2]], front_faces[:, [2, 0]]]).astype(np.int64)
+    keys = edges[:, 0] * n + edges[:, 1]
+    reverse = edges[:, 1] * n + edges[:, 0]
+    a, b = edges[~np.isin(keys, reverse)].T
+    walls = np.vstack([np.column_stack([b, a, a + n]), np.column_stack([b, a + n, b + n])])
+
+    faces = np.vstack([front_faces, back_faces, walls]).astype(np.int64)
+    if signed_volume(verts, faces) < 0:
+        faces = faces[:, ::-1].copy()
+    return Solid(verts, faces, None)

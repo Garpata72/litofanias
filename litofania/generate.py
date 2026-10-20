@@ -5,6 +5,11 @@ from dataclasses import dataclass
 
 import math
 
+import numpy as np
+
+from dataclasses import replace
+
+from litofania.contours import contour_mask, erode
 from litofania.heightmap import FlatParams, load_gray, sphere_gray, thickness_map
 from litofania.shapes import build_solid, build_sphere, sphere_lats
 from litofania.stl import write_stl
@@ -19,13 +24,24 @@ class Result:
     radius_mm: float | None = None
 
 
-def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana", angle_deg: float = 120.0) -> Result:
-    """`p.width_mm` es el ancho desarrollado: el ancho de la plana, la longitud del arco o el perímetro del cilindro."""
+def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana", angle_deg: float = 120.0,
+             contour: str = "rectangulo") -> Result:
+    """`p.width_mm` es el ancho desarrollado: el ancho de la plana, la longitud del arco o el perímetro del cilindro.
+
+    `contour` recorta la plana (corazón, círculo…); el marco sigue entonces el contorno."""
     wrap = shape == "cilindro"
-    t = thickness_map(load_gray(image_path, p, wrap), p, wrap)
-    s = build_solid(t, p.mm_per_px, shape, angle_deg)
+    if shape == "plana" and contour != "rectangulo":
+        no_frame = replace(p, border_mm=0)
+        t = thickness_map(load_gray(image_path, no_frame), no_frame)
+        mask = contour_mask(*t.shape, contour)
+        t[mask & ~erode(mask, round(p.border_mm / p.mm_per_px))] = p.max_mm
+        s = build_solid(t, p.mm_per_px, shape, mask=mask)
+    else:
+        t = thickness_map(load_gray(image_path, p, wrap), p, wrap)
+        s = build_solid(t, p.mm_per_px, shape, angle_deg)
     write_stl(out_path, s.verts, s.faces)
-    w, h, d = (s.verts.max(axis=0) - s.verts.min(axis=0)).tolist()
+    used = s.verts[np.unique(s.faces)]
+    w, h, d = (used.max(axis=0) - used.min(axis=0)).tolist()
     if shape != "plana":   # en las curvas la altura va en z (se imprimen de pie)
         w, h, d = w, d, h
     return Result(width_mm=w, height_mm=h, depth_mm=d, triangles=len(s.faces), radius_mm=s.radius_mm)

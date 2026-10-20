@@ -75,3 +75,19 @@ def test_sphere_and_dome_are_watertight():
         assert np.isclose(r.max(), 30.0)
     top, bottom = sphere_lats(30.0, "esfera", 20.0, 1.0)
     assert np.isclose(30.0 * np.cos(bottom), 10.0)   # abertura de 20 mm de diámetro
+
+
+def test_contours_are_watertight_with_frame():
+    from litofania.contours import CONTOURS, contour_mask, erode
+    from litofania.shapes import build_solid, signed_volume
+
+    t = np.full((40, 60), 1.0)
+    for c in CONTOURS:
+        mask = contour_mask(40, 60, c)
+        t2 = t.copy()
+        t2[mask & ~erode(mask, 3)] = 3.0
+        s = build_solid(t2, 0.5, "plana", mask=mask)
+        _edges_are_manifold(s.faces)
+        assert signed_volume(s.verts, s.faces) > 0, c
+    heart = contour_mask(40, 60, "corazon")
+    assert heart[20, 30] and not heart[0, 30] and not heart[39, 0]   # centro dentro, muesca y esquinas fuera

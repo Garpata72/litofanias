@@ -34,6 +34,7 @@ class LitoRequest(BaseModel):
     forma: Literal["plana", "arco", "cilindro", "esfera", "cupula"] = "plana"
     ancho: float = Field(150.0, ge=20, le=400)      # plana y arco: ancho desarrollado
     angulo: float = Field(120.0, ge=30, le=300)     # arco
+    contorno: Literal["rectangulo", "redondeado", "circulo", "ovalo", "corazon"] = "rectangulo"   # plana
     diametro: float = Field(80.0, ge=30, le=210)    # cilindro, esfera y cúpula: diámetro exterior
     agujero: float = Field(40.0, ge=10, le=200)     # esfera: diámetro de la abertura de abajo
     ajuste: Literal["centrada", "panoramica"] = "centrada"   # esfera y cúpula
@@ -126,7 +127,7 @@ def make_lithophane(req: LitoRequest) -> dict:
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
             return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura)
-        return generate(str(path), str(out), params, req.forma, req.angulo)
+        return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno)
 
     r = build(storage.MODELS / f"{name}.stl", p)
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.

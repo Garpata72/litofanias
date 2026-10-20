@@ -41,10 +41,10 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
-  forma: "plana", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150,
+  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150,
   min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
@@ -143,6 +143,48 @@ async function upload(file) {
   } catch (e) { toast(e.message, "err"); }
 }
 
+/* ───────── Contornos de la plana ─────────
+   Mismas fórmulas que litofania/contours.py: si se cambia una, cambiar la otra. */
+function contourMask(rows, cols, contour) {
+  const m = new Uint8Array(rows * cols).fill(1);
+  if (contour === "rectangulo") return m;
+  const aspect = (cols - 1) / (rows - 1);
+  for (let i = 0; i < rows; i++) {
+    const v = 1 - (2 * i) / (rows - 1);
+    for (let j = 0; j < cols; j++) {
+      const u = (2 * j) / (cols - 1) - 1;
+      let inside;
+      if (contour === "ovalo") inside = u * u + v * v <= 1;
+      else if (contour === "circulo") {
+        const [x, y] = aspect >= 1 ? [u * aspect, v] : [u, v / aspect];
+        inside = x * x + y * y <= 1;
+      } else if (contour === "redondeado") {
+        const w = aspect, h = 1, r = 0.15 * 2 * Math.min(w, h);
+        const x = Math.abs(u) * w, y = Math.abs(v) * h;
+        inside = x <= w - r || y <= h - r || (x - (w - r)) ** 2 + (y - (h - r)) ** 2 <= r * r;
+      } else {
+        const x = u * 1.16, y = ((v + 1) / 2) * 2.27 - 1.02;
+        inside = (x * x + y * y - 1) ** 3 - x * x * y ** 3 <= 0;
+      }
+      m[i * cols + j] = inside ? 1 : 0;
+    }
+  }
+  return m;
+}
+function erode(mask, rows, cols, steps) {
+  let m = mask;
+  for (let s = 0; s < steps; s++) {
+    const out = new Uint8Array(m.length);
+    for (let i = 1; i < rows - 1; i++)
+      for (let j = 1; j < cols - 1; j++) {
+        const k = i * cols + j;
+        out[k] = m[k] & m[k - 1] & m[k + 1] & m[k - cols] & m[k + cols];
+      }
+    m = out;
+  }
+  return m;
+}
+
 /* ───────── Vista previa a contraluz ─────────
    Reproduce en pequeño lo que hace el servidor: gris, brillo, contraste (sobre la media, como Pillow),
    gamma e inversión; luego grosor = mín + (1 - gris)·(máx - mín) y la luz que pasa decae con el grosor. */
@@ -164,7 +206,8 @@ function draw() {
   if (!current || !source.complete || !source.naturalWidth) return;
 
   const wrap = p.forma === "cilindro";
-  const frame = SPHERE.includes(p.forma) ? 0 : p.marco;
+  const cut = p.forma === "plana" && p.contorno !== "rectangulo";   // el marco sigue el contorno
+  const frame = SPHERE.includes(p.forma) || cut ? 0 : p.marco;
   const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * frame));
   const scale = Math.min(1, PREVIEW_MAX / Math.max(source.naturalWidth, source.naturalHeight));
   const w = Math.max(2, Math.round(source.naturalWidth * scale));
@@ -201,6 +244,16 @@ function draw() {
   const edge = light(p.max);
   ctx.fillStyle = `rgb(${255 * edge},${222 * edge},${170 * edge})`;
   ctx.fillRect(0, 0, cv.width, cv.height);
+  if (cut) {
+    const mask = contourMask(h, w, p.contorno);
+    const inner = erode(mask, h, w, Math.round((p.marco / Math.max(5, p.ancho)) * w));
+    for (let k = 0; k < mask.length; k++) {
+      const i = 4 * k;
+      if (!mask[k]) d[i + 3] = 0;
+      else if (!inner[k]) { d[i] = 255 * edge; d[i + 1] = 222 * edge; d[i + 2] = 170 * edge; }
+    }
+    ctx.clearRect(0, 0, cv.width, cv.height);
+  }
   ctx.putImageData(img, padX, pad);
 }
 
@@ -232,7 +285,7 @@ function updateSummary(p, ok) {
     return;
   }
   if (p.forma === "plana") {
-    size = `${fmt(W)} × ${fmt(H)} × ${fmt(p.max)} mm`;
+    size = `${fmt(W)} × ${fmt(H)} × ${fmt(p.max)} mm${p.contorno !== "rectangulo" ? ` · ${$("#contorno").selectedOptions[0].text.toLowerCase()}` : ""}`;
     onBed = W <= BED.x && H <= BED.z;
   } else if (p.forma === "arco") {
     const theta = (p.angulo * Math.PI) / 180, R = W / theta;
