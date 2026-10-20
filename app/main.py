@@ -167,4 +167,13 @@ def download_model(image_id: str, shape: str) -> FileResponse:
     return FileResponse(_model_path(image_id, shape), media_type="model/stl", filename=f"litofania-{shape}-{name}.stl")
 
 
+@app.middleware("http")
+async def no_cache(request, call_next):
+    # Que el navegador vuelva a pedir la interfaz tras actualizar la app en vez de usar una copia vieja.
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
