@@ -10,6 +10,7 @@ ROOT = Path(os.environ.get("LITOFANIAS_DATOS", Path(__file__).resolve().parent.p
 IMAGES = ROOT / "imagenes"
 MODELS = ROOT / "stl"
 MASKS = ROOT / "mascaras"
+PRESETS = ROOT / "plantillas.json"
 
 
 def ensure_dirs() -> None:
@@ -57,3 +58,16 @@ def save_mask_meta(mask_id: str, meta: dict) -> None:
 def list_masks() -> list[dict]:
     metas = [json.loads(p.read_text(encoding="utf-8")) for p in MASKS.glob("*.json")]
     return sorted(metas, key=lambda m: m["creada"], reverse=True)
+
+
+def load_presets() -> dict[str, dict]:
+    try:
+        return json.loads(PRESETS.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_presets(presets: dict[str, dict]) -> None:
+    tmp = PRESETS.with_suffix(".tmp")
+    tmp.write_text(json.dumps(presets, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(PRESETS)

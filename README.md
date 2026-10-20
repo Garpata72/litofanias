@@ -25,7 +25,9 @@ Puerto por defecto: **8040** (8000, 8010 y 8020 los usan otras apps).
 1. **Abrir imagen** o arrastrarla a la ventana.
 2. Ajusta brillo, contraste, gamma o invierte; la vista **A contraluz** simula cómo se verá impresa.
 3. Elige la forma (plana, arco o cilindro), el tamaño, los grosores, la resolución y el marco, y pulsa **Generar y ver en 3D**. En el arco se indica el ancho desarrollado y el ángulo; en el cilindro, el diámetro exterior (la imagen da la vuelta completa y el marco va solo arriba y abajo). En la esfera y la cúpula, el diámetro exterior, la abertura de abajo (esfera) y cómo va la foto: **centrada delante** (ocupando los grados que elijas, con fondo claro alrededor) o **panorámica** (estirada a toda la esfera, ideal para fotos 2:1). La plana puede recortarse con un **contorno**: rectángulo, esquinas redondeadas, círculo, óvalo o corazón (el marco sigue el borde), o con una **máscara propia**: sube una silueta negra sobre blanco (o un PNG con transparencia) y la pieza toma su forma. En la plana, la vista «Encuadre» permite arrastrar la foto y hacer zoom para colocarla dentro del contorno; con zoom menor que 1 la foto queda más pequeña que la pieza. Lo que la foto no tapa (en la plana, la esfera o la cúpula) lleva un **relleno**: liso o **luna** con mares y cráteres. En la esfera también se puede elegir *Sin foto (solo relleno)* para una lámpara luna clásica.
-4. En el visor 3D gira la pieza, cambia entre **Relieve** (luz frontal) y **Contraluz** (cómo se verá encendida) y pulsa **Descargar STL** cuando te guste.
+   **Texto grabado** añade un nombre o una fecha en letras que se encienden: en una franja bajo la foto (plana rectangular, arco y cilindro), sobre la parte de abajo de la pieza (plana recortada) o encima de la abertura (esfera y cúpula).
+   Con **Plantillas** guardas los ajustes con un nombre (se guardan en `datos/plantillas.json`) y los recuperas con un clic.
+4. En el visor 3D gira la pieza, cambia entre **Relieve** (luz frontal) y **Contraluz** (cómo se verá encendida) y pulsa **Descargar STL** cuando te guste. **Ajustes de impresión** descarga un texto con la configuración recomendada para la Ender 3 V3 KE (orientación, capa, relleno, soportes) y el filamento aproximado.
 
 Con **Ver STL / 3MF** (o arrastrando el archivo a la ventana) puedes abrir cualquier STL o 3MF de tu ordenador en el mismo visor. El visor usa three.js, incluido en `app/static/vendor/three` (licencia MIT), así que funciona sin internet.
 
@@ -49,6 +51,10 @@ python make_flat.py foto.jpg litofania.stl --ancho 150
 ## Consejos de impresión (Ender 3 V3 KE)
 
 PLA blanco, relleno 100 %, altura de capa 0,12 mm y la pieza de pie (en vertical) en el laminador. En la plana el relieve queda en la cara delantera y la trasera es plana. En arco y cilindro la cara exterior es lisa y el relieve va por dentro, junto a la luz; los STL curvos ya salen de pie.
+
+## Licencias
+
+El texto grabado usa la fuente DejaVu Sans Bold, incluida en `litofania/fuentes/` con su licencia.
 
 ## Desarrollo
 

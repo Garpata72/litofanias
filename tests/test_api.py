@@ -116,3 +116,21 @@ def test_moon_fill(client):
     for body in ({"forma": "esfera", "relleno": "luna", "ajuste": "relleno", "agujero": 20}, {"forma": "plana", "relleno": "luna", "zoom": 0.6}):
         info = client.post("/api/litofanias", json={"imagen_id": meta["id"], "diametro": 40, "ancho": 40, "resolucion": 0.8, **body})
         assert info.status_code == 200, info.text
+
+
+def test_text_settings_and_presets(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "ancho": 40, "resolucion": 0.5, "marco": 2}
+    plain = client.post("/api/litofanias", json=base).json()
+    info = client.post("/api/litofanias", json={**base, "texto": "Año 2026", "texto_mm": 6}).json()
+    assert info["medidas_mm"][1] > plain["medidas_mm"][1] + 6       # la franja del texto va debajo
+    assert info["gramos"] > 0
+    txt = client.get(info["ajustes"])
+    assert txt.status_code == 200 and "Ender 3 V3 KE" in txt.text and "DE PIE" in txt.text
+    sphere = client.post("/api/litofanias", json={**base, "forma": "cupula", "diametro": 40, "texto": "Luna"})
+    assert sphere.status_code == 200
+
+    assert client.put("/api/plantillas/Regalo", json={"forma": "plana", "ancho": 120, "imagen_id": "x"}).status_code == 200
+    assert client.get("/api/plantillas").json() == [{"nombre": "Regalo", "ajustes": {"forma": "plana", "ancho": 120}}]
+    assert client.delete("/api/plantillas/Regalo").status_code == 200
+    assert client.get("/api/plantillas").json() == []

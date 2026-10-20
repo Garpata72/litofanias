@@ -45,6 +45,11 @@
 
     <div class="sidehead"><span>Litofanía</span></div>
     <div class="fields">
+      <div class="presets">
+        <select id="plantilla" aria-label="Plantilla de ajustes"><option value="">Plantillas…</option></select>
+        <button id="btnPresetSave" class="iconbtn" type="button" data-icon="save" title="Guardar los ajustes actuales como plantilla" aria-label="Guardar plantilla"></button>
+        <button id="btnPresetDel" class="iconbtn" type="button" data-icon="trash" title="Borrar la plantilla elegida" aria-label="Borrar plantilla"></button>
+      </div>
       <label class="fsel"><span>Forma</span>
         <select id="forma" aria-label="Forma">
           <option value="plana">Plana</option>
@@ -87,6 +92,8 @@
           <option value="liso">Liso</option>
           <option value="luna">Luna (cráteres)</option>
         </select></label>
+      <label class="textfield"><span>Texto grabado</span><input id="texto" type="text" maxlength="60" placeholder="Un nombre, una fecha…"></label>
+      <label class="num" data-text><span>Alto de las letras</span><input id="texto_mm" type="number" min="3" max="40" step="0.5" value="8"><i>mm</i></label>
       <label class="num"><span>Grosor mínimo</span><input id="min" type="number" min="0.4" max="3" step="0.1" value="0.8"><i>mm</i></label>
       <label class="num"><span>Grosor máximo</span><input id="max" type="number" min="1" max="8" step="0.1" value="3"><i>mm</i></label>
       <label class="num"><span>Resolución</span><input id="resolucion" type="number" min="0.05" max="1" step="0.05" value="0.2"><i>mm/px</i></label>
@@ -129,6 +136,7 @@
       <button id="mLit" type="button" class="segbtn" aria-pressed="false" title="Luz por detrás: cómo se verá encendida (L)">Contraluz</button>
     </div>
     <button id="lbFit" class="iconbtn" data-icon="fit" title="Volver a encuadrar (F)" aria-label="Volver a encuadrar"></button>
+    <a id="lbSettings" class="btn small" download title="Ajustes recomendados para imprimir esta pieza en la Ender 3 V3 KE"><span data-icon="doc"></span> Ajustes de impresión</a>
     <a id="lbDownload" class="btn primary small" download><span data-icon="download"></span> Descargar STL</a>
     <button id="lbClose" class="iconbtn" data-icon="close" title="Cerrar (Esc)" aria-label="Cerrar"></button>
   </div>
