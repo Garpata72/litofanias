@@ -66,6 +66,9 @@ class LitoRequest(BaseModel):
     contraste: float = Field(1.0, ge=0.2, le=3.0)
     gamma: float = Field(1.0, ge=0.2, le=3.0)
     invertir: bool = False
+    girar: Literal[0, 90, 180, 270] = 0             # giro de la foto en el sentido del reloj
+    recorte: tuple[float, float, float, float] | None = None   # x, y, ancho, alto en fracciones (tras girar)
+    relieve: Literal["dentro", "fuera"] = "dentro"   # curvas: cara del relieve (la otra queda lisa)
     texto: str = Field("", max_length=60)           # texto grabado (vacío = sin texto)
     texto_mm: float = Field(8.0, ge=3, le=40)       # alto de las letras
 
@@ -216,6 +219,15 @@ def _fill_png(fill: Fill, cols: int, rows: int, mm_px: float) -> bytes:
     return buf.getvalue()
 
 
+def _crop(c: tuple[float, float, float, float] | None) -> tuple[float, float, float, float] | None:
+    if c is None:
+        return None
+    x, y, w, h = c
+    if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 - x + 1e-6 and 0 < h <= 1 - y + 1e-6):
+        raise HTTPException(422, "El recorte de la foto no es válido")
+    return None if (x, y, w, h) == (0, 0, 1, 1) else (x, y, w, h)
+
+
 @app.post("/api/litofanias")
 def make_lithophane(req: LitoRequest) -> dict:
     path = storage.image_path(req.imagen_id)
@@ -242,17 +254,17 @@ def make_lithophane(req: LitoRequest) -> dict:
     p = FlatParams(
         width_mm=width, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
         border_mm=req.marco, brightness=req.brillo, contrast=req.contraste,
-        gamma=req.gamma, invert=req.invertir,
+        gamma=req.gamma, invert=req.invertir, rotate=req.girar, crop=_crop(req.recorte),
     )
     name = f"{req.imagen_id}-{req.forma}"
 
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
             return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura,
-                                   fill, req.texto, req.texto_mm)
+                                   fill, req.texto, req.texto_mm, req.relieve == "fuera")
         return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno,
                         str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), fill,
-                        req.texto, req.texto_mm)
+                        req.texto, req.texto_mm, req.relieve == "fuera")
 
     r = build(storage.MODELS / f"{name}.stl", p)
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
@@ -278,6 +290,7 @@ def make_lithophane(req: LitoRequest) -> dict:
         "grosor_mm": [p.min_mm, p.max_mm],
         "radio_mm": r.radius_mm,
         "gramos": round(printing.grams(r.volume_mm3)),
+        "relieve_fuera": req.relieve == "fuera" and req.forma != "plana",
         "ajustes": f"{base}-ajustes.txt",
     }
 

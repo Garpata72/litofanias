@@ -45,10 +45,10 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relieve", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
-  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
+  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relieve: "dentro", relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
   min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
@@ -112,6 +112,39 @@ function validParams(p) {
 let images = [];
 let current = null;      // ficha de la imagen abierta
 const source = new Image();
+/* Foto girada y recortada: es la que usan todas las vistas (el servidor hace lo mismo con girar y recorte). */
+const PROC_MAX = 2000;
+const src = document.createElement("canvas");
+const rotFull = document.createElement("canvas");   // foto entera girada, para el modo recortar
+let srcVersion = 0;
+let crop = { x: 0, y: 0, w: 1, h: 1, rot: 0 };
+let cropMode = false;
+function rebuildSource() {
+  if (!source.naturalWidth) return;
+  const W0 = source.naturalWidth, H0 = source.naturalHeight, side = crop.rot % 180 !== 0;
+  const rw = side ? H0 : W0, rh = side ? W0 : H0;
+  const k = Math.min(1, PROC_MAX / Math.max(rw, rh));
+  rotFull.width = Math.max(1, Math.round(rw * k));
+  rotFull.height = Math.max(1, Math.round(rh * k));
+  const r = rotFull.getContext("2d");
+  r.save();
+  r.translate(rotFull.width / 2, rotFull.height / 2);
+  r.rotate((crop.rot * Math.PI) / 180);
+  r.drawImage(source, (-W0 * k) / 2, (-H0 * k) / 2, W0 * k, H0 * k);
+  r.restore();
+  const cx = Math.round(crop.x * rotFull.width), cy = Math.round(crop.y * rotFull.height);
+  src.width = Math.max(2, Math.round(crop.w * rotFull.width));
+  src.height = Math.max(2, Math.round(crop.h * rotFull.height));
+  src.getContext("2d").drawImage(rotFull, -cx, -cy);
+  srcVersion++;
+}
+function setCrop(c, save = true) {
+  crop = { ...crop, ...c };
+  rebuildSource();
+  if (save && current) store.set(`recorte.${current.id}`, crop);
+  setFrame({}, false);
+}
+const fullCrop = () => crop.x === 0 && crop.y === 0 && crop.w === 1 && crop.h === 1;
 let masks = [];
 let maskId = store.get("mascara");
 const maskImg = new Image();
@@ -212,10 +245,10 @@ const ZOOM = { min: 0.25, max: 4 };
    Mismo cálculo que crop_window en litofania/heightmap.py: si se cambia uno, cambiar el otro. El centro
    es el punto de la foto que cae en el centro de la pieza; con zoom menor que 1 la foto es más pequeña que la pieza. */
 function pieceAspect(p) {
-  return customMask(p) && maskMeta() ? maskMeta().ancho / maskMeta().alto : current.ancho / current.alto;
+  return customMask(p) && maskMeta() ? maskMeta().ancho / maskMeta().alto : src.width / src.height;
 }
 function cropWindow(p) {
-  const W = source.naturalWidth, H = source.naturalHeight;
+  const W = src.width, H = src.height;
   if (p.forma !== "plana") return { x: 0, y: 0, w: W, h: H };
   const a = pieceAspect(p), z = frame.zoom;
   let w, h;
@@ -256,6 +289,9 @@ function select(meta) {
   $("#views").hidden = false;
   $("#btnStl").disabled = false;
   frame = { zoom: 1, cx: 0.5, cy: 0.5, ...(store.get(`encuadre.${meta.id}`) || {}) };
+  crop = { x: 0, y: 0, w: 1, h: 1, rot: 0, ...(store.get(`recorte.${meta.id}`) || {}) };
+  srcVersion = 0;
+  if (cropMode) toggleCrop(false);
   $("#zoom").value = frame.zoom;
   showSliderValues();
   source.src = `/api/imagenes/${meta.id}/archivo`;
@@ -335,7 +371,7 @@ function draw() {
   const ok = validParams(p);
   store.set("params", p);
   updateSummary(p, ok);
-  if (!current || !source.complete || !source.naturalWidth) return;
+  if (!current || !source.complete || !source.naturalWidth || !srcVersion) return;
 
   const flat = p.forma === "plana";
   if (customMask(p) && !(maskImg.complete && maskImg.naturalWidth)) return;   // se redibuja al cargar
@@ -360,7 +396,7 @@ function draw() {
   layer.width = w;
   layer.height = h;
   const lctx = layer.getContext("2d", { willReadFrequently: true });
-  lctx.drawImage(source, -win.x * k, -win.y * k, source.naturalWidth * k, source.naturalHeight * k);
+  lctx.drawImage(src, -win.x * k, -win.y * k, src.width * k, src.height * k);
   const d = lctx.getImageData(0, 0, w, h).data;
   const bg = fill ? fillGray(fill, w, h) : null;
 
@@ -453,17 +489,17 @@ function engrave(ctx, text, px, x, y, bw, bh, dark, light, fixedWidth) {
 /* Media de gris de la foto entera tras el brillo, como hace Pillow con el contraste. */
 let statsFor = null, statsGray = null;
 function sourceMean(brillo) {
-  if (statsFor !== source.src) {
+  if (statsFor !== srcVersion) {
     const c = document.createElement("canvas");
-    const s = Math.min(1, 128 / Math.max(source.naturalWidth, source.naturalHeight));
-    c.width = Math.max(1, Math.round(source.naturalWidth * s));
-    c.height = Math.max(1, Math.round(source.naturalHeight * s));
+    const s = Math.min(1, 128 / Math.max(src.width, src.height));
+    c.width = Math.max(1, Math.round(src.width * s));
+    c.height = Math.max(1, Math.round(src.height * s));
     const ctx = c.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(source, 0, 0, c.width, c.height);
+    ctx.drawImage(src, 0, 0, c.width, c.height);
     const d = ctx.getImageData(0, 0, c.width, c.height).data;
     statsGray = new Float32Array(d.length / 4);
     for (let i = 0, j = 0; j < statsGray.length; i += 4, j++) statsGray[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    statsFor = source.src;
+    statsFor = srcVersion;
   }
   let sum = 0;
   for (const g of statsGray) sum += Math.min(255, g * brillo);
@@ -513,15 +549,44 @@ function shapeMask(p, rows, cols) {
   return m;
 }
 
+/* Modo recortar: la foto entera (girada) con el rectángulo del recorte; se mueve arrastrando dentro y se
+   cambia de tamaño desde las esquinas. */
+const CROP_VIEW = 640;
+let cropGeom = { k: 1 };
+function drawCrop() {
+  const cv = $("#cvFrame");
+  const k = CROP_VIEW / Math.max(rotFull.width, rotFull.height);
+  const w = Math.round(rotFull.width * k), h = Math.round(rotFull.height * k);
+  cv.width = w;
+  cv.height = h;
+  cropGeom = { w, h };
+  cv.classList.add("movable");
+  $("#capFrame").textContent = "Recortar (arrastra el recuadro o sus esquinas)";
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(rotFull, 0, 0, w, h);
+  const x = crop.x * w, y = crop.y * h, cw = crop.w * w, ch = crop.h * h;
+  ctx.fillStyle = "rgba(14, 17, 22, 0.7)";
+  ctx.fillRect(0, 0, w, y);
+  ctx.fillRect(0, y + ch, w, h - y - ch);
+  ctx.fillRect(0, y, x, ch);
+  ctx.fillRect(x + cw, y, w - x - cw, ch);
+  ctx.strokeStyle = "#fbbf24";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, cw, ch);
+  ctx.fillStyle = "#fbbf24";
+  for (const [hx, hy] of [[x, y], [x + cw, y], [x, y + ch], [x + cw, y + ch]]) ctx.fillRect(hx - 6, hy - 6, 12, 12);
+}
+
 /* Primera vista: la pieza con la foto colocada y un margen alrededor donde se ve, atenuada, la parte de la
    foto que se queda fuera. En la plana se arrastra y se hace zoom; lo que queda fuera del contorno se
    oscurece y la franja del marco se marca en ámbar. */
 let frameGeom = { w: 1, total: 1 };
 function drawFrame(p, win, w, h, mask, band, fill) {
+  if (cropMode) { drawCrop(); return; }
   const flat = p.forma === "plana";
   const cv = $("#cvFrame");
   cv.classList.toggle("movable", flat);
-  $("#capFrame").textContent = flat ? "Encuadre (arrastra la foto)" : "Original";
+  $("#capFrame").textContent = flat ? "Encuadre (arrastra la foto)" : fullCrop() && !crop.rot ? "Original" : "Foto recortada";
   const M = flat ? Math.round(0.2 * Math.max(w, h)) : 0;
   cv.width = w + 2 * M;
   cv.height = h + 2 * M;
@@ -534,7 +599,7 @@ function drawFrame(p, win, w, h, mask, band, fill) {
     else { ctx.fillStyle = `rgb(${255 * PLAIN},${255 * PLAIN},${255 * PLAIN})`; ctx.fillRect(M, M, w, h); }
   }
   const k = w / win.w;
-  ctx.drawImage(source, M - win.x * k, M - win.y * k, source.naturalWidth * k, source.naturalHeight * k);
+  ctx.drawImage(src, M - win.x * k, M - win.y * k, src.width * k, src.height * k);
   if (!flat) return;
 
   // Fuera de la pieza: la foto se ve atenuada.
@@ -570,7 +635,7 @@ function updateSummary(p, ok) {
   const pad = Math.round(p.marco / p.resolucion);
   const cols = wrap ? Math.round(W / p.resolucion) : Math.max(2, Math.round((W - 2 * p.marco) / p.resolucion) + 1) + 2 * pad;
   const imgCols = wrap ? cols : cols - 2 * pad;
-  const rows = Math.max(2, Math.round(imgCols / (p.forma === "plana" ? pieceAspect(p) : current.ancho / current.alto))) + 2 * pad;
+  const rows = Math.max(2, Math.round(imgCols / (p.forma === "plana" ? pieceAspect(p) : src.width / src.height))) + 2 * pad;
   const textBand = p.texto.trim() && !(p.forma === "plana" && p.contorno !== "rectangulo") ? p.texto_mm * (1 + 2 * TEXT_MARGIN) : 0;
   const H = (rows - 1) * p.resolucion + textBand;
   const tris = 4 * rows * cols;
@@ -693,6 +758,7 @@ async function generate() {
     const info = await (await api("POST", "/api/litofanias", {
       imagen_id: current.id, ...p, mascara_id: customMask(p) ? maskId : null, textura_id: textureFill(p) ? textureId : null,
       zoom: frame.zoom, centro_x: frame.cx, centro_y: frame.cy,
+      girar: crop.rot, recorte: fullCrop() ? null : [crop.x, crop.y, crop.w, crop.h],
     })).json();
     const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 }));
     const tri = info.triangulos.toLocaleString("es-ES");
@@ -704,6 +770,7 @@ async function generate() {
       settings: info.ajustes,
       radius: info.radio_mm,
       sphere: SPHERE.includes(info.forma),
+      rIn: info.relieve_fuera ? info.radio_mm - info.grosor_mm[1] : 0,
     });
   } catch (e) {
     toast(e.message, "err");
@@ -730,7 +797,7 @@ $("#btnStl").addEventListener("click", generate);
 $("#btnView").addEventListener("click", () => $("#file3d").click());
 $("#file3d").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) window.Visor.open({ file: f, name: f.name }); e.target.value = ""; });
 for (const k of PARAMS) $(`#${k}`).addEventListener("input", () => { showSliderValues(); showShapeFields(); queueDraw(); });
-source.addEventListener("load", () => setFrame({}, false));
+source.addEventListener("load", () => setCrop({}, false));
 maskImg.addEventListener("load", () => setFrame({}, false));
 $("#btnMask").addEventListener("click", () => $("#fileMask").click());
 $("#fileMask").addEventListener("change", (e) => { uploadMask(e.target.files[0]); e.target.value = ""; });
@@ -739,29 +806,87 @@ $("#contorno").addEventListener("change", () => setFrame({}, false));
 
 let dragFrom = null;
 const cvFrame = $("#cvFrame");
+let cropDrag = null;
+function cropPoint(e) {   // posición del puntero en fracciones de la foto girada
+  const r = cvFrame.getBoundingClientRect();
+  return { u: (e.clientX - r.left) / r.width, v: (e.clientY - r.top) / r.height, px: 14 / r.width, py: 14 / r.height };
+}
 cvFrame.addEventListener("pointerdown", (e) => {
+  if (current && cropMode) {
+    const { u, v, px, py } = cropPoint(e);
+    const near = (a, b, t) => Math.abs(a - b) < t;
+    const cx = near(u, crop.x, px) ? "l" : near(u, crop.x + crop.w, px) ? "r" : "";
+    const cy = near(v, crop.y, py) ? "t" : near(v, crop.y + crop.h, py) ? "b" : "";
+    const inside = u > crop.x && u < crop.x + crop.w && v > crop.y && v < crop.y + crop.h;
+    if ((cx && cy) || inside) {
+      cropDrag = { u, v, corner: cx && cy ? cx + cy : "", start: { ...crop } };
+      cvFrame.setPointerCapture(e.pointerId);
+    }
+    return;
+  }
   if (!current || readParams().forma !== "plana") return;
   dragFrom = { x: e.clientX, y: e.clientY, cx: frame.cx, cy: frame.cy };
   cvFrame.setPointerCapture(e.pointerId);
 });
 cvFrame.addEventListener("pointermove", (e) => {
+  if (cropDrag) {
+    const { u, v } = cropPoint(e);
+    const s = cropDrag.start, du = u - cropDrag.u, dv = v - cropDrag.v, MIN = 0.05;
+    const clamp = (a, lo, hi) => Math.min(hi, Math.max(lo, a));
+    let { x, y, w, h } = s;
+    if (!cropDrag.corner) {
+      x = clamp(s.x + du, 0, 1 - s.w);
+      y = clamp(s.y + dv, 0, 1 - s.h);
+    } else {
+      if (cropDrag.corner.includes("l")) { x = clamp(s.x + du, 0, s.x + s.w - MIN); w = s.x + s.w - x; }
+      if (cropDrag.corner.includes("r")) w = clamp(s.w + du, MIN, 1 - s.x);
+      if (cropDrag.corner.includes("t")) { y = clamp(s.y + dv, 0, s.y + s.h - MIN); h = s.y + s.h - y; }
+      if (cropDrag.corner.includes("b")) h = clamp(s.h + dv, MIN, 1 - s.y);
+    }
+    crop = { ...crop, x, y, w, h };
+    drawCrop();
+    return;
+  }
   if (!dragFrom) return;
   const win = cropWindow(readParams());
   const k = win.w / (cvFrame.clientWidth * frameGeom.w / frameGeom.total);   // píxeles de foto por píxel de pantalla
   setFrame({
-    cx: dragFrom.cx - ((e.clientX - dragFrom.x) * k) / source.naturalWidth,
-    cy: dragFrom.cy - ((e.clientY - dragFrom.y) * k) / source.naturalHeight,
+    cx: dragFrom.cx - ((e.clientX - dragFrom.x) * k) / src.width,
+    cy: dragFrom.cy - ((e.clientY - dragFrom.y) * k) / src.height,
   }, false);
 });
-const endDrag = () => { if (dragFrom) { dragFrom = null; setFrame({}); } };
+const endDrag = () => {
+  if (cropDrag) { cropDrag = null; setCrop({}); }
+  if (dragFrom) { dragFrom = null; setFrame({}); }
+};
 cvFrame.addEventListener("pointerup", endDrag);
 cvFrame.addEventListener("pointercancel", endDrag);
 cvFrame.addEventListener("wheel", (e) => {
-  if (!current || readParams().forma !== "plana") return;
+  if (!current || cropMode || readParams().forma !== "plana") return;
   e.preventDefault();
   setFrame({ zoom: frame.zoom * Math.exp(-e.deltaY * 0.0015) });
 }, { passive: false });
-cvFrame.addEventListener("dblclick", () => { if (current) setFrame({ zoom: 1, cx: 0.5, cy: 0.5 }); });
+cvFrame.addEventListener("dblclick", () => {
+  if (!current) return;
+  if (cropMode) setCrop({ x: 0, y: 0, w: 1, h: 1 });
+  else setFrame({ zoom: 1, cx: 0.5, cy: 0.5 });
+});
+
+function toggleCrop(on = !cropMode) {
+  cropMode = on;
+  $("#btnCrop").setAttribute("aria-pressed", on);
+  $("#btnCrop").textContent = on ? "Listo" : "Recortar";
+  queueDraw();
+}
+function rotate(delta) {
+  // El recorte se gira con la foto para que siga enmarcando lo mismo.
+  const { x, y, w, h } = crop;
+  const r = delta > 0 ? { x: 1 - y - h, y: x, w: h, h: w } : { x: y, y: 1 - x - w, w: h, h: w };
+  setCrop({ ...r, rot: (crop.rot + delta + 360) % 360 });
+}
+$("#btnCrop").addEventListener("click", () => current && toggleCrop());
+$("#btnRotL").addEventListener("click", () => current && rotate(-90));
+$("#btnRotR").addEventListener("click", () => current && rotate(90));
 
 $("#btnQuit").addEventListener("click", async () => {
   try { await api("POST", "/api/apagar", {}); } catch { /* ya se ha cerrado */ }

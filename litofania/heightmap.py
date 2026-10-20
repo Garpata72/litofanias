@@ -18,10 +18,23 @@ class FlatParams:
     contrast: float = 1.0
     gamma: float = 1.0
     invert: bool = False
+    rotate: int = 0                                         # giro en grados, en el sentido del reloj
+    crop: tuple[float, float, float, float] | None = None   # recorte x, y, ancho, alto en fracciones (tras girar)
+
+
+ROTATIONS = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180, 270: Image.Transpose.ROTATE_90}
 
 
 def _adjusted(path: str, p: FlatParams) -> Image.Image:
-    img = ImageOps.exif_transpose(Image.open(path)).convert("L")
+    img = ImageOps.exif_transpose(Image.open(path))
+    if p.rotate in ROTATIONS:
+        img = img.transpose(ROTATIONS[p.rotate])
+    if p.crop is not None:
+        x, y, w, h = p.crop
+        box = (round(x * img.width), round(y * img.height), round((x + w) * img.width), round((y + h) * img.height))
+        if box[2] - box[0] >= 2 and box[3] - box[1] >= 2:
+            img = img.crop(box)
+    img = img.convert("L")
     if p.brightness != 1.0:
         img = ImageEnhance.Brightness(img).enhance(p.brightness)
     if p.contrast != 1.0:

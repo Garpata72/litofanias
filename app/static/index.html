@@ -80,6 +80,11 @@
       <label class="num" data-shapes="arco"><span>Ángulo del arco</span><input id="angulo" type="number" min="30" max="300" step="5" value="120"><i>grados</i></label>
       <label class="num" data-shapes="cilindro esfera cupula"><span>Diámetro exterior</span><input id="diametro" type="number" min="30" max="210" step="1" value="80"><i>mm</i></label>
       <label class="num" data-shapes="esfera"><span>Abertura para la luz</span><input id="agujero" type="number" min="10" max="200" step="1" value="40"><i>mm</i></label>
+      <label class="fsel" data-shapes="arco cilindro esfera cupula"><span>Relieve</span>
+        <select id="relieve" aria-label="Cara donde va el relieve">
+          <option value="dentro">Por dentro (fuera liso)</option>
+          <option value="fuera">Por fuera</option>
+        </select></label>
       <label class="fsel" data-shapes="esfera cupula"><span>Foto</span>
         <select id="ajuste" aria-label="Cómo se coloca la foto">
           <option value="centrada">Centrada delante</option>
@@ -137,7 +142,12 @@
     </div>
     <section id="views" hidden>
       <figure class="view">
-        <figcaption id="capFrame">Original</figcaption>
+        <figcaption class="withtools"><span id="capFrame">Original</span>
+          <span class="tools">
+            <button id="btnRotL" class="chip" type="button" title="Girar la foto a la izquierda">⟲</button>
+            <button id="btnRotR" class="chip" type="button" title="Girar la foto a la derecha">⟳</button>
+            <button id="btnCrop" class="chip" type="button" aria-pressed="false" title="Recortar la foto (doble clic: sin recorte)">Recortar</button>
+          </span></figcaption>
         <div class="stage"><canvas id="cvFrame" aria-label="Encuadre de la foto"></canvas></div>
       </figure>
       <figure class="view">
