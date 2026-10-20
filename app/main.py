@@ -9,9 +9,9 @@ import time
 from functools import lru_cache
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 import numpy as np
@@ -27,7 +27,7 @@ from litofania import text as engraving
 from litofania import accessories
 from litofania.shapes import SHAPES, signed_volume
 from litofania.stl import write_stl
-from litofania.textures import flat_moon
+from litofania.textures import Fill, flat_fill, prepare_texture
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
@@ -51,7 +51,12 @@ class LitoRequest(BaseModel):
     diametro: float = Field(80.0, ge=30, le=210)    # cilindro, esfera y cúpula: diámetro exterior
     agujero: float = Field(40.0, ge=10, le=200)     # esfera: diámetro de la abertura de abajo
     ajuste: Literal["centrada", "panoramica", "relleno"] = "centrada"   # esfera y cúpula; «relleno» = sin foto
-    relleno: Literal["liso", "luna"] = "liso"        # plana, esfera y cúpula: lo que no tapa la foto
+    relleno: Literal["liso", "luna", "textura"] = "liso"   # plana, esfera y cúpula: lo que no tapa la foto
+    textura_id: str | None = None                   # relleno «textura»
+    textura_mm: float = Field(40.0, ge=5, le=300)   # ancho de cada repetición de la textura
+    textura_relieve: float = Field(1.0, ge=0, le=3)  # 1 = como la imagen; más, más marcado
+    textura_invertir: bool = False
+    textura_bn: bool = False                        # blanco y negro en vez de grises
     cobertura: float = Field(150.0, ge=40, le=360)  # esfera y cúpula centradas: grados de ancho de la foto
     min: float = Field(0.8, ge=0.4, le=3.0)
     max: float = Field(3.0, ge=1.0, le=8.0)
@@ -133,13 +138,13 @@ async def upload_mask(archivo: UploadFile) -> dict:
     mask.save(storage.MASKS / f"{mask_id}.png")
     meta = {"id": mask_id, "nombre": archivo.filename or "mascara.png", "ancho": mask.width, "alto": mask.height,
             "creada": time.time()}
-    storage.save_mask_meta(mask_id, meta)
+    storage.save_asset_meta(storage.MASKS, mask_id, meta)
     return meta
 
 
 @app.get("/api/mascaras")
 def list_masks() -> list[dict]:
-    return storage.list_masks()
+    return storage.list_assets(storage.MASKS)
 
 
 @app.get("/api/mascaras/{mask_id}/archivo")
@@ -150,18 +155,64 @@ def get_mask(mask_id: str) -> FileResponse:
     return FileResponse(path, media_type="image/png")
 
 
-@app.get("/api/relleno/luna.png")
-def moon_texture(ancho: int = 400, alto: int = 300) -> Response:
-    """Relleno de luna para la vista previa de la plana: el mismo que lleva el STL, a la medida pedida."""
-    if not (2 <= ancho <= 1000 and 2 <= alto <= 1000):
-        raise HTTPException(422, "Medidas fuera de rango")
-    return Response(_moon_png(ancho, alto), media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+@app.post("/api/texturas")
+async def upload_texture(archivo: UploadFile) -> dict:
+    """Textura propia para el relleno: se guarda en gris, con el contraste estirado y como mucho 1024 px."""
+    _, img = await _read_image(archivo)
+    tex = prepare_texture(img)
+    tex_id = storage.new_id()
+    tex.save(storage.TEXTURES / f"{tex_id}.png")
+    meta = {"id": tex_id, "nombre": archivo.filename or "textura.png", "ancho": tex.width, "alto": tex.height,
+            "creada": time.time()}
+    storage.save_asset_meta(storage.TEXTURES, tex_id, meta)
+    return meta
+
+
+@app.get("/api/texturas")
+def list_textures() -> list[dict]:
+    return storage.list_assets(storage.TEXTURES)
+
+
+@app.get("/api/texturas/{tex_id}/archivo")
+def get_texture(tex_id: str) -> FileResponse:
+    path = storage.asset_path(storage.TEXTURES, tex_id)
+    if path is None:
+        raise HTTPException(404, "Textura no encontrada")
+    return FileResponse(path, media_type="image/png")
+
+
+def _fill(req: "LitoRequest | FillQuery") -> Fill:
+    if req.relleno != "textura":
+        return Fill(req.relleno)
+    path = storage.asset_path(storage.TEXTURES, req.textura_id or "")
+    if path is None:
+        raise HTTPException(422, "Elige o sube una textura para el relleno")
+    return Fill("textura", str(path), req.textura_mm, req.textura_relieve, req.textura_invertir, req.textura_bn)
+
+
+class FillQuery(BaseModel):
+    relleno: Literal["liso", "luna", "textura"] = "luna"
+    textura_id: str | None = None
+    textura_mm: float = Field(40.0, ge=5, le=300)
+    textura_relieve: float = Field(1.0, ge=0, le=3)
+    textura_invertir: bool = False
+    textura_bn: bool = False
+    ancho: int = Field(400, ge=2, le=1000)          # píxeles de la vista previa
+    alto: int = Field(300, ge=2, le=1000)
+    mm_px: float = Field(0.4, gt=0, le=10)          # milímetros de pieza por píxel de la vista previa
+
+
+@app.get("/api/relleno.png")
+def fill_preview(q: Annotated[FillQuery, Query()]) -> Response:
+    """Relleno para la vista previa de la plana: el mismo que lleva el STL, a la medida pedida."""
+    return Response(_fill_png(_fill(q), q.ancho, q.alto, round(q.mm_px, 4)), media_type="image/png",
+                    headers={"Cache-Control": "max-age=3600"})
 
 
 @lru_cache(maxsize=16)
-def _moon_png(cols: int, rows: int) -> bytes:
+def _fill_png(fill: Fill, cols: int, rows: int, mm_px: float) -> bytes:
     buf = io.BytesIO()
-    Image.fromarray((flat_moon(rows, cols) * 255).round().astype(np.uint8)).save(buf, format="PNG")
+    Image.fromarray((flat_fill(fill, rows, cols, mm_px) * 255).round().astype(np.uint8)).save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -186,6 +237,8 @@ def make_lithophane(req: LitoRequest) -> dict:
         if mask is None:
             raise HTTPException(422, "Elige o sube una máscara para el contorno propio")
 
+    uses_fill = req.forma == "plana" or (req.forma in ("esfera", "cupula") and req.ajuste != "panoramica")
+    fill = _fill(req) if uses_fill else Fill()
     p = FlatParams(
         width_mm=width, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
         border_mm=req.marco, brightness=req.brillo, contrast=req.contraste,
@@ -196,9 +249,9 @@ def make_lithophane(req: LitoRequest) -> dict:
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
             return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura,
-                                   req.relleno, req.texto, req.texto_mm)
+                                   fill, req.texto, req.texto_mm)
         return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno,
-                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), req.relleno,
+                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), fill,
                         req.texto, req.texto_mm)
 
     r = build(storage.MODELS / f"{name}.stl", p)

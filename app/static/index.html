@@ -91,7 +91,19 @@
         <select id="relleno" aria-label="Relleno de lo que no tapa la foto">
           <option value="liso">Liso</option>
           <option value="luna">Luna (cráteres)</option>
+          <option value="textura">Textura propia…</option>
         </select></label>
+      <div class="maskbox" data-shapes="plana esfera cupula" data-fit="centrada relleno" data-fill="textura">
+        <div id="textures" class="thumbs"></div>
+        <button id="btnTex" class="btn small" type="button" title="Subir una imagen para usarla como textura del relleno"><span data-icon="upload"></span> Subir textura</button>
+        <input id="fileTex" type="file" accept="image/*" hidden>
+        <p class="hint">Mejor una imagen cuadrada de 512 a 1024 px y «sin costuras» (seamless), para que al repetirse no se noten los cortes. Se pasa a grises automáticamente.</p>
+        <label class="num"><span>Tamaño del motivo</span><input id="textura_mm" type="number" min="5" max="300" step="1" value="40"><i>mm</i></label>
+        <label class="slider"><span>Relieve de la textura</span><output data-for="textura_relieve"></output>
+          <input id="textura_relieve" type="range" min="0" max="3" step="0.05" value="1"></label>
+        <label class="check"><input id="textura_invertir" type="checkbox"> Invertir la textura</label>
+        <label class="check"><input id="textura_bn" type="checkbox"> Blanco y negro (sin grises)</label>
+      </div>
       <label class="textfield"><span>Texto grabado</span><input id="texto" type="text" maxlength="60" placeholder="Un nombre, una fecha…"></label>
       <label class="num" data-text><span>Alto de las letras</span><input id="texto_mm" type="number" min="3" max="40" step="0.5" value="8"><i>mm</i></label>
       <label class="num"><span>Grosor mínimo</span><input id="min" type="number" min="0.4" max="3" step="0.1" value="0.8"><i>mm</i></label>

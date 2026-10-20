@@ -89,7 +89,7 @@ def place_photo(img: Image.Image, p: FlatParams, cols: int, rows: int, x: float,
 
 
 def load_gray(path: str, p: FlatParams, wrap: bool = False, aspect: float | None = None,
-              zoom: float = 1.0, center: tuple[float, float] = (0.5, 0.5), fill: str = "liso") -> np.ndarray:
+              zoom: float = 1.0, center: tuple[float, float] = (0.5, 0.5), fill="liso") -> np.ndarray:
     """Carga la imagen, aplica ajustes básicos y la escala a la resolución de impresión.
 
     `aspect` (ancho/alto de la pieza, por defecto el de la foto), `zoom` y `center` encuadran la foto; lo que
@@ -108,29 +108,26 @@ def load_gray(path: str, p: FlatParams, wrap: bool = False, aspect: float | None
     aspect = aspect or img.width / img.height
     rows = max(2, round(cols / aspect))
     x, y, w, _ = crop_window(img.width, img.height, cols / rows, zoom, center)
-    return place_photo(img, p, cols, rows, x, y, w, flat_fill(fill, rows, cols))
+    return place_photo(img, p, cols, rows, x, y, w, flat_fill(fill, rows, cols, p.mm_per_px))
 
 
 def sphere_gray(path: str, p: FlatParams, cols: int, rows: int, lat_top: float, lat_bottom: float,
-                fit: str = "centrada", coverage_deg: float = 150.0, fill: str = "liso") -> np.ndarray:
+                fit: str = "centrada", coverage_deg: float = 150.0, fill="liso") -> np.ndarray:
     """Rejilla de grises (rows × cols) que cubre la esfera: longitudes completas, latitudes de arriba abajo.
 
     «panoramica» estira la imagen a toda la esfera (ideal para fotos 2:1). «centrada» coloca la foto
     delante, en el ecuador, ocupando `coverage_deg` grados de ancho y manteniendo su proporción; el
-    resto lleva el relleno `fill` (liso o luna). «relleno» deja solo el relleno, sin foto.
+    resto lleva el relleno `fill` (liso, luna o textura, ver textures.py). «relleno» deja solo el relleno, sin foto.
     """
-    from litofania.textures import PLAIN, sphere_moon
+    from litofania.textures import sphere_fill
 
     img = _adjusted(path, p)
     if fit == "panoramica":
         return _finish(img.resize((cols, rows), Image.LANCZOS), p)
 
-    if fill == "luna":
-        lats = np.linspace(lat_top, lat_bottom, rows)
-        lons = 2 * np.pi * np.arange(cols) / cols - np.pi    # como en shapes.build_sphere
-        background = sphere_moon(lats, lons)
-    else:
-        background = np.full((rows, cols), PLAIN)
+    lats = np.linspace(lat_top, lat_bottom, rows)
+    lons = 2 * np.pi * np.arange(cols) / cols - np.pi        # como en shapes.build_sphere
+    background = sphere_fill(fill, lats, lons, cols * p.mm_per_px / (2 * np.pi))
     if fit == "relleno":
         return background
 

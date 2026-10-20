@@ -32,7 +32,7 @@ class Result:
 
 def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana", angle_deg: float = 120.0,
              contour: str = "rectangulo", mask_path: str | None = None, zoom: float = 1.0,
-             center: tuple[float, float] = (0.5, 0.5), fill: str = "liso", text: str = "",
+             center: tuple[float, float] = (0.5, 0.5), fill="liso", text: str = "",
              text_mm: float = 8.0) -> Result:
     """`p.width_mm` es el ancho desarrollado: el ancho de la plana, la longitud del arco o el perímetro del cilindro.
 
@@ -80,7 +80,7 @@ def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana"
 
 def generate_sphere(image_path: str, out_path: str, p: FlatParams, shape: str, diameter_mm: float,
                     hole_mm: float = 40.0, fit: str = "centrada", coverage_deg: float = 150.0,
-                    fill: str = "liso", text: str = "", text_mm: float = 8.0) -> Result:
+                    fill="liso", text: str = "", text_mm: float = 8.0) -> Result:
     """Esfera con abertura abajo o cúpula (media esfera). `diameter_mm` es el diámetro exterior.
 
     `text` se graba delante, cerca de la base: justo encima de la abertura o del borde de la cúpula."""

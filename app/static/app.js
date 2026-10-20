@@ -45,10 +45,10 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relleno", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
-  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relleno: "liso", texto: "", texto_mm: 8,
+  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
   min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
@@ -81,7 +81,8 @@ function showShapeFields() {
   $$("[data-shapes]").forEach((el) => {
     el.hidden = !el.dataset.shapes.split(" ").includes(forma)
       || (el.dataset.fit && SPHERE.includes(forma) && !el.dataset.fit.split(" ").includes(ajuste))
-      || (el.dataset.contour && el.dataset.contour !== $("#contorno").value);
+      || (el.dataset.contour && el.dataset.contour !== $("#contorno").value)
+      || (el.dataset.fill && el.dataset.fill !== $("#relleno").value);
   });
   $$("[data-text]").forEach((el) => (el.hidden = !$("#texto").value.trim()));
   updateAccessoryButton();
@@ -93,7 +94,7 @@ const developed = (p) => (ROUND.includes(p.forma) ? Math.PI * p.diametro : p.anc
 
 function validParams(p) {
   let ok = true;
-  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "texto_mm", "min", "max", "resolucion", "marco"]) {
+  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "textura_mm", "texto_mm", "min", "max", "resolucion", "marco"]) {
     const el = $(`#${k}`);
     const bad = !el.closest("label").hidden && !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
     el.classList.toggle("bad", bad);
@@ -103,7 +104,7 @@ function validParams(p) {
   if (!ROUND.includes(p.forma) && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
   if (ROUND.includes(p.forma) && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
   if (p.forma === "esfera" && p.agujero >= p.diametro - 10) { $("#agujero").classList.add("bad"); ok = false; }
-  if (needsMask(p)) ok = false;
+  if (needsMask(p) || needsTexture(p)) ok = false;
   return ok;
 }
 
@@ -119,6 +120,51 @@ let frame = { zoom: 1, cx: 0.5, cy: 0.5 };   // encuadre de la foto en la plana,
 const maskMeta = () => masks.find((m) => m.id === maskId);
 const customMask = (p) => p.forma === "plana" && p.contorno === "propia";
 const needsMask = (p) => customMask(p) && !maskMeta();
+
+/* Texturas propias para el relleno: la app las guarda en gris. */
+let textures = [];
+let textureId = store.get("textura");
+const textureFill = (p) => p.relleno === "textura" && ["plana", ...SPHERE].includes(p.forma)
+  && !(SPHERE.includes(p.forma) && p.ajuste === "panoramica");
+const needsTexture = (p) => textureFill(p) && !textures.some((t) => t.id === textureId);
+
+async function loadTextures() {
+  textures = await (await api("GET", "/api/texturas")).json();
+  const box = $("#textures");
+  box.innerHTML = textures.length ? "" : `<div class="none">Todavía no has subido ninguna textura.</div>`;
+  for (const t of textures.slice(0, 24)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.title = t.nombre;
+    b.dataset.id = t.id;
+    b.style.backgroundImage = `url(/api/texturas/${t.id}/archivo)`;
+    b.classList.toggle("sel", t.id === textureId);
+    b.addEventListener("click", () => selectTexture(t.id));
+    box.append(b);
+  }
+  queueDraw();
+}
+function selectTexture(id) {
+  textureId = id;
+  store.set("textura", id);
+  $$("#textures button").forEach((b) => b.classList.toggle("sel", b.dataset.id === id));
+  queueDraw();
+}
+async function uploadTexture(file) {
+  if (!file || !file.type.startsWith("image/")) { toast("Eso no parece una imagen.", "err"); return; }
+  const fd = new FormData();
+  fd.append("archivo", file);
+  try {
+    const meta = await (await api("POST", "/api/texturas", fd)).json();
+    textureId = meta.id;
+    await loadTextures();
+    selectTexture(meta.id);
+    $("#relleno").value = "textura";
+    showShapeFields();
+    const small = Math.min(meta.ancho, meta.alto) < 256 ? " Es pequeña: se verá borrosa si el motivo es grande." : "";
+    toast(`Textura «${meta.nombre}» lista (${meta.ancho} × ${meta.alto} px, en grises).${small}`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
 
 async function loadMasks() {
   masks = await (await api("GET", "/api/mascaras")).json();
@@ -305,7 +351,7 @@ function draw() {
   const padX = wrap ? 0 : pad;
   const mask = cut ? shapeMask(p, h, w) : null;
   const band = cut ? erode(mask, h, w, Math.round((p.marco / Math.max(5, p.ancho)) * w)) : null;
-  const fill = flat ? fillLayer(p, w, h) : null;
+  const fill = flat ? fillLayer(p, w, h, (cut ? Math.max(5, p.ancho) : inner) / w) : null;
   drawFrame(p, win, w, h, mask, band, fill);
 
   // Capa de la foto (transparente donde no llega) y gris del relleno debajo.
@@ -426,17 +472,23 @@ function sourceMean(brillo) {
 
 /* Relleno de lo que la foto no tapa: liso (gris fijo) o la luna que genera el servidor, la misma del STL. */
 const PLAIN = 0.85;   // como textures.PLAIN
-const moonImg = new Image();
-moonImg.addEventListener("load", () => queueDraw());
-function fillLayer(p, w, h) {
-  if (p.relleno !== "luna") return { kind: "liso" };
-  const url = `/api/relleno/luna.png?ancho=${w}&alto=${h}`;
-  if (!moonImg.src.endsWith(url)) moonImg.src = url;
-  return moonImg.complete && moonImg.naturalWidth === w && moonImg.naturalHeight === h ? { kind: "luna", img: moonImg } : { kind: "liso" };
+const fillImg = new Image();
+fillImg.addEventListener("load", () => queueDraw());
+function fillLayer(p, w, h, mmPx) {
+  if (p.relleno === "liso" || (p.relleno === "textura" && needsTexture(p))) return { kind: "liso" };
+  const q = new URLSearchParams({ relleno: p.relleno, ancho: w, alto: h, mm_px: mmPx.toFixed(4) });
+  if (p.relleno === "textura") {
+    q.set("textura_id", textureId);
+    for (const k of ["textura_mm", "textura_relieve", "textura_invertir", "textura_bn"]) q.set(k, p[k]);
+  }
+  const url = `/api/relleno.png?${q}`;
+  if (!fillImg.src.endsWith(url)) fillImg.src = url;
+  return fillImg.complete && fillImg.naturalWidth === w && fillImg.naturalHeight === h && fillImg.src.endsWith(url)
+    ? { kind: "img", img: fillImg } : { kind: "liso" };
 }
 function fillGray(fill, w, h) {
   const g = new Float32Array(w * h);
-  if (fill.kind !== "luna") return g.fill(PLAIN);
+  if (fill.kind !== "img") return g.fill(PLAIN);
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
@@ -478,7 +530,7 @@ function drawFrame(p, win, w, h, mask, band, fill) {
   ctx.fillStyle = "#0e1116";
   ctx.fillRect(0, 0, cv.width, cv.height);
   if (fill) {
-    if (fill.kind === "luna") ctx.drawImage(fill.img, M, M, w, h);
+    if (fill.kind === "img") ctx.drawImage(fill.img, M, M, w, h);
     else { ctx.fillStyle = `rgb(${255 * PLAIN},${255 * PLAIN},${255 * PLAIN})`; ctx.fillRect(M, M, w, h); }
   }
   const k = w / win.w;
@@ -510,7 +562,8 @@ function drawFrame(p, win, w, h, mask, band, fill) {
 
 function updateSummary(p, ok) {
   if (!current) { $("#summary").textContent = ""; return; }
-  if (!ok) { $("#summary").textContent = needsMask(p) ? "Sube o elige una máscara para el contorno propio." : "Revisa los valores marcados en rojo."; $("#btnStl").disabled = true; return; }
+  if (!ok) { $("#summary").textContent = needsMask(p) ? "Sube o elige una máscara para el contorno propio."
+    : needsTexture(p) ? "Sube o elige una textura para el relleno." : "Revisa los valores marcados en rojo."; $("#btnStl").disabled = true; return; }
   $("#btnStl").disabled = false;
   const wrap = p.forma === "cilindro";
   const W = developed(p);
@@ -638,7 +691,7 @@ async function generate() {
   btn.lastChild.textContent = " Generando…";
   try {
     const info = await (await api("POST", "/api/litofanias", {
-      imagen_id: current.id, ...p, mascara_id: customMask(p) ? maskId : null,
+      imagen_id: current.id, ...p, mascara_id: customMask(p) ? maskId : null, textura_id: textureFill(p) ? textureId : null,
       zoom: frame.zoom, centro_x: frame.cx, centro_y: frame.cy,
     })).json();
     const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 }));
@@ -732,6 +785,9 @@ addEventListener("drop", (e) => {
 writeParams({ ...DEFAULTS, ...(store.get("params") || {}) });
 showShapeFields();
 loadMasks().catch((e) => toast(e.message, "err"));
+loadTextures().catch((e) => toast(e.message, "err"));
+$("#btnTex").addEventListener("click", () => $("#fileTex").click());
+$("#fileTex").addEventListener("change", (e) => { uploadTexture(e.target.files[0]); e.target.value = ""; });
 loadPresets().catch((e) => toast(e.message, "err"));
 loadImages().then(() => {
   const last = images.find((m) => m.id === store.get("ultima")) || images[0];
