@@ -11,6 +11,9 @@ const ICONS = {
   refresh: "M20 11a8 8 0 1 0-2.3 5.7 M20 4v7h-7",
   upload: "M12 16V4 M7 9l5-5 5 5 M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3",
   download: "M12 4v12 M7 11l5 5 5-5 M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3",
+  cube: "M12 3l8 4.5v9L12 21l-8-4.5v-9z M4 7.5l8 4.5 8-4.5 M12 12v9",
+  fit: "M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5",
+  close: "M6 6l12 12 M18 6L6 18",
 };
 const icon = (name) => `<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[name] || ""}"/></svg></span>`;
 $$("[data-icon]").forEach((e) => e.insertAdjacentHTML("afterbegin", icon(e.dataset.icon)));
@@ -194,7 +197,7 @@ function updateSummary(p, ok) {
   if ((R - 1) * p.resolucion > 220) $("#summary").textContent += " · más alta que la cama de 220 mm";
 }
 
-/* ───────── Generar STL ───────── */
+/* ───────── Generar STL y verlo en 3D ───────── */
 async function generate() {
   const p = readParams();
   if (!current || !validParams(p)) return;
@@ -204,16 +207,16 @@ async function generate() {
   const label = btn.lastChild.textContent;
   btn.lastChild.textContent = " Generando…";
   try {
-    const r = await api("POST", "/api/litofanias/plana", { imagen_id: current.id, ...p });
-    const blob = await r.blob();
-    const name = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(r.headers.get("Content-Disposition") || "")?.[1];
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name ? decodeURIComponent(name) : "litofania.stl";
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    const tri = Number(r.headers.get("X-Triangulos") || 0).toLocaleString("es-ES");
-    toast(`STL listo: ${r.headers.get("X-Medidas-Mm") || ""} mm, ${tri} triángulos.`, "ok");
+    const info = await (await api("POST", "/api/litofanias/plana", { imagen_id: current.id, ...p })).json();
+    const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES"));
+    const tri = info.triangulos.toLocaleString("es-ES");
+    window.Visor.open({
+      url: info.vista,
+      name: current.nombre,
+      details: `${w} × ${h} × ${d} mm · ${tri} triángulos en el STL`,
+      download: info.stl,
+      thickness: info.grosor_mm,
+    });
   } catch (e) {
     toast(e.message, "err");
   } finally {
@@ -236,6 +239,8 @@ $("#btnReset").addEventListener("click", () => {
   queueDraw();
 });
 $("#btnStl").addEventListener("click", generate);
+$("#btnView").addEventListener("click", () => $("#file3d").click());
+$("#file3d").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) window.Visor.open({ file: f, name: f.name }); e.target.value = ""; });
 for (const k of PARAMS) $(`#${k}`).addEventListener("input", () => { showSliderValues(); queueDraw(); });
 source.addEventListener("load", queueDraw);
 
@@ -252,7 +257,9 @@ addEventListener("drop", (e) => {
   e.preventDefault();
   dragDepth = 0;
   $("#dropzone").hidden = true;
-  upload(e.dataTransfer.files[0]);
+  const f = e.dataTransfer.files[0];
+  if (f && /\.(stl|3mf)$/i.test(f.name)) window.Visor.open({ file: f, name: f.name });
+  else upload(f);
 });
 
 /* ───────── Arranque ───────── */

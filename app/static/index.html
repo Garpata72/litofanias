@@ -16,6 +16,10 @@
     <span class="txt">Lito<b>fanías</b></span>
   </a>
   <span class="spacer"></span>
+  <button id="btnView" class="btn" type="button" title="Abrir un STL o 3MF del ordenador en el visor 3D">
+    <span data-icon="cube"></span><span class="txt">Ver STL / 3MF</span>
+  </button>
+  <input id="file3d" type="file" accept=".stl,.3mf" hidden>
   <button id="btnOpen" class="btn primary" type="button" title="Abrir una imagen (también puedes arrastrarla a la ventana)">
     <span data-icon="plus"></span><span class="txt">Abrir imagen</span>
   </button>
@@ -62,7 +66,7 @@
     <div class="bar">
       <h1 id="title">Sin imagen</h1>
       <p id="summary" aria-live="polite"></p>
-      <button id="btnStl" class="btn primary" type="button" disabled><span data-icon="download"></span> Generar STL</button>
+      <button id="btnStl" class="btn primary" type="button" disabled><span data-icon="cube"></span> Generar y ver en 3D</button>
     </div>
     <div id="empty" class="empty">
       <span data-icon="upload"></span>
@@ -82,6 +86,23 @@
   </main>
 </div>
 
+<!-- Visor 3D -->
+<div id="lb" hidden role="dialog" aria-modal="true" aria-label="Visor 3D">
+  <div class="lbbar">
+    <div class="lbtitle"><strong id="lbName"></strong><span id="lbInfo"></span></div>
+    <div class="seg" role="group" aria-label="Iluminación">
+      <button id="mRelief" type="button" class="segbtn" aria-pressed="true" title="Luz frontal: se ve el relieve (R)">Relieve</button>
+      <button id="mLit" type="button" class="segbtn" aria-pressed="false" title="Luz por detrás: cómo se verá encendida (L)">Contraluz</button>
+    </div>
+    <button id="lbFit" class="iconbtn" data-icon="fit" title="Volver a encuadrar (F)" aria-label="Volver a encuadrar"></button>
+    <a id="lbDownload" class="btn primary small" download><span data-icon="download"></span> Descargar STL</a>
+    <button id="lbClose" class="iconbtn" data-icon="close" title="Cerrar (Esc)" aria-label="Cerrar"></button>
+  </div>
+  <div id="v3d"></div>
+  <div id="lbMsg" class="lbmsg" hidden></div>
+  <div class="lbhelp">Arrastra para girar · rueda para acercar · clic derecho para mover</div>
+</div>
+
 <div id="dropzone" hidden>
   <div class="box">
     <span data-icon="upload"></span>
@@ -91,6 +112,8 @@
 <div id="toast"><span class="msgtext"></span></div>
 <div id="closed" hidden><div><div class="big">Litofanías cerrada</div>Puedes cerrar esta pestaña.</div></div>
 
+<script type="importmap">{ "imports": { "three": "/vendor/three/three.module.min.js" } }</script>
+<script type="module" src="/viewer.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

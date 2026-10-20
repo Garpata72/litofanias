@@ -24,7 +24,10 @@ Puerto por defecto: **8040** (8000, 8010 y 8020 los usan otras apps).
 
 1. **Abrir imagen** o arrastrarla a la ventana.
 2. Ajusta brillo, contraste, gamma o invierte; la vista **A contraluz** simula cómo se verá impresa.
-3. Elige tamaño, grosores, resolución y marco, y pulsa **Generar STL**.
+3. Elige tamaño, grosores, resolución y marco, y pulsa **Generar y ver en 3D**.
+4. En el visor 3D gira la pieza, cambia entre **Relieve** (luz frontal) y **Contraluz** (cómo se verá encendida) y pulsa **Descargar STL** cuando te guste.
+
+Con **Ver STL / 3MF** (o arrastrando el archivo a la ventana) puedes abrir cualquier STL o 3MF de tu ordenador en el mismo visor. El visor usa three.js, incluido en `app/static/vendor/three` (licencia MIT), así que funciona sin internet.
 
 Las imágenes y los STL se guardan en `datos/`, junto a la app (se puede cambiar con la variable `LITOFANIAS_DATOS`).
 

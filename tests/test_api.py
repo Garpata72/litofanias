@@ -38,9 +38,22 @@ def test_upload_list_and_generate(client):
 
     r = client.post("/api/litofanias/plana", json={"imagen_id": meta["id"], "ancho": 40, "resolucion": 0.5, "marco": 2})
     assert r.status_code == 200
-    tris = int(r.headers["x-triangulos"])
-    assert len(r.content) == 84 + 50 * tris
-    assert "litofania-foto.stl" in r.headers["content-disposition"]
+    info = r.json()
+    assert info["medidas_mm"][0] == 40.0
+
+    stl = client.get(info["stl"])
+    assert len(stl.content) == 84 + 50 * info["triangulos"]
+    assert "litofania-foto.stl" in stl.headers["content-disposition"]
+    assert client.get(info["vista"]).status_code == 200
+
+
+def test_preview_is_lighter_for_big_pieces(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("g.png", _png(1500, 1000), "image/png")}).json()
+    info = client.post("/api/litofanias/plana", json={"imagen_id": meta["id"], "ancho": 200, "resolucion": 0.1}).json()
+    full = int(client.get(info["stl"]).content[80:84][::-1].hex(), 16)
+    preview = int(client.get(info["vista"]).content[80:84][::-1].hex(), 16)
+    assert full == info["triangulos"] > 4_000_000
+    assert preview <= 750_000
 
 
 def test_rejects_bad_input(client):

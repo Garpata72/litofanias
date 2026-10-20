@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import io
+import math
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -18,6 +20,7 @@ from litofania.heightmap import FlatParams
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
+PREVIEW_TRIANGLES = 700_000
 
 app = FastAPI(title="Litofanías")
 storage.ensure_dirs()
@@ -90,7 +93,7 @@ def get_image(image_id: str) -> FileResponse:
 
 
 @app.post("/api/litofanias/plana")
-def make_flat(req: FlatRequest) -> FileResponse:
+def make_flat(req: FlatRequest) -> dict:
     path = storage.image_path(req.imagen_id)
     if path is None:
         raise HTTPException(404, "Imagen no encontrada")
@@ -104,19 +107,39 @@ def make_flat(req: FlatRequest) -> FileResponse:
         border_mm=req.marco, brightness=req.brillo, contrast=req.contraste,
         gamma=req.gamma, invert=req.invertir,
     )
-    out = storage.MODELS / f"{req.imagen_id}-plana.stl"
-    r = generate_flat(str(path), str(out), p)
-    meta = storage.get_meta(req.imagen_id) or {}
-    name = Path(meta.get("nombre", req.imagen_id)).stem
-    return FileResponse(
-        out,
-        media_type="model/stl",
-        filename=f"litofania-{name}.stl",
-        headers={
-            "X-Medidas-Mm": f"{r.width_mm:.1f}x{r.height_mm:.1f}x{r.depth_mm:.1f}",
-            "X-Triangulos": str(r.triangles),
-        },
-    )
+    r = generate_flat(str(path), str(storage.MODELS / f"{req.imagen_id}-plana.stl"), p)
+
+    # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
+    preview_res = max(p.mm_per_px, math.sqrt(4 * r.width_mm * r.height_mm / PREVIEW_TRIANGLES))
+    preview = replace(p, mm_per_px=preview_res)
+    generate_flat(str(path), str(storage.MODELS / f"{req.imagen_id}-plana-vista.stl"), preview)
+
+    base = f"/api/litofanias/{req.imagen_id}"
+    return {
+        "stl": f"{base}/plana.stl",
+        "vista": f"{base}/plana-vista.stl?v={time.time_ns()}",
+        "medidas_mm": [round(r.width_mm, 1), round(r.height_mm, 1), round(r.depth_mm, 1)],
+        "triangulos": r.triangles,
+        "grosor_mm": [p.min_mm, p.max_mm],
+    }
+
+
+@app.get("/api/litofanias/{image_id}/plana.stl")
+def download_flat(image_id: str) -> FileResponse:
+    path = storage.MODELS / f"{image_id}-plana.stl"
+    if not image_id.isalnum() or not path.exists():
+        raise HTTPException(404, "Todavía no se ha generado esa litofanía")
+    meta = storage.get_meta(image_id) or {}
+    name = Path(meta.get("nombre", image_id)).stem
+    return FileResponse(path, media_type="model/stl", filename=f"litofania-{name}.stl")
+
+
+@app.get("/api/litofanias/{image_id}/plana-vista.stl")
+def preview_flat(image_id: str) -> FileResponse:
+    path = storage.MODELS / f"{image_id}-plana-vista.stl"
+    if not image_id.isalnum() or not path.exists():
+        raise HTTPException(404, "Todavía no se ha generado esa litofanía")
+    return FileResponse(path, media_type="model/stl")
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
