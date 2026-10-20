@@ -14,6 +14,9 @@ const ICONS = {
   cube: "M12 3l8 4.5v9L12 21l-8-4.5v-9z M4 7.5l8 4.5 8-4.5 M12 12v9",
   fit: "M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5",
   close: "M6 6l12 12 M18 6L6 18",
+  save: "M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6",
+  trash: "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13 M10 11v6 M14 11v6",
+  doc: "M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6",
 };
 const icon = (name) => `<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[name] || ""}"/></svg></span>`;
 $$("[data-icon]").forEach((e) => e.insertAdjacentHTML("afterbegin", icon(e.dataset.icon)));
@@ -41,10 +44,10 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relleno", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relleno", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
-  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relleno: "liso",
+  forma: "plana", contorno: "rectangulo", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relleno: "liso", texto: "", texto_mm: 8,
   min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
@@ -57,14 +60,14 @@ function readParams() {
   const p = {};
   for (const k of PARAMS) {
     const el = $(`#${k}`);
-    p[k] = el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? el.value : Number(el.value);
+    p[k] = el.type === "checkbox" ? el.checked : el.tagName === "SELECT" || el.type === "text" ? el.value : Number(el.value);
   }
   return p;
 }
 function writeParams(p) {
   for (const k of PARAMS) {
     const el = $(`#${k}`);
-    if (el.type === "checkbox") el.checked = !!p[k]; else el.value = p[k];
+    if (el.type === "checkbox") el.checked = !!p[k]; else el.value = p[k] ?? DEFAULTS[k];
   }
   showSliderValues();
 }
@@ -79,6 +82,7 @@ function showShapeFields() {
       || (el.dataset.fit && SPHERE.includes(forma) && !el.dataset.fit.split(" ").includes(ajuste))
       || (el.dataset.contour && el.dataset.contour !== $("#contorno").value);
   });
+  $$("[data-text]").forEach((el) => (el.hidden = !$("#texto").value.trim()));
 }
 /* Ancho de la imagen ya colocada: el de la plana, la longitud del arco o el perímetro del cilindro. */
 const ROUND = ["cilindro", "esfera", "cupula"];
@@ -87,7 +91,7 @@ const developed = (p) => (ROUND.includes(p.forma) ? Math.PI * p.diametro : p.anc
 
 function validParams(p) {
   let ok = true;
-  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "min", "max", "resolucion", "marco"]) {
+  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "texto_mm", "min", "max", "resolucion", "marco"]) {
     const el = $(`#${k}`);
     const bad = !el.closest("label").hidden && !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
     el.classList.toggle("bad", bad);
@@ -315,9 +319,15 @@ function draw() {
   const tMin = Math.exp(-ABSORB * p.min);
   const light = (t) => Math.exp(-ABSORB * t) / tMin;
 
+  // Texto grabado: franja debajo en las piezas rectangulares, banda sobre la pieza en las recortadas.
+  const text = SPHERE.includes(p.forma) ? "" : p.texto.trim();
+  const pxPerMm = w / (cut ? Math.max(5, p.ancho) : inner);
+  const textPx = p.texto_mm * pxPerMm;
+  const bandH = text && !cut ? Math.round(textPx * (1 + 2 * TEXT_MARGIN)) : 0;
+
   const cv = $("#cvLit");
   cv.width = w + 2 * padX;
-  cv.height = h + 2 * pad;
+  cv.height = h + bandH + 2 * pad;
   const ctx = cv.getContext("2d");
   const img = ctx.createImageData(w, h);
   const o = img.data;
@@ -346,6 +356,49 @@ function draw() {
     ctx.fillRect(0, 0, cv.width, cv.height);
   }
   ctx.putImageData(img, padX, pad);
+  const lit = (t) => { const L = light(t); return `rgb(${255 * L},${222 * L},${170 * L})`; };
+  if (text && !cut) engrave(ctx, text, textPx, padX, pad + h, w, bandH, lit(p.max), lit(p.min), false);
+  if (text && cut) {
+    // Misma búsqueda que text.overlay: la banda sube hasta caber dentro de la pieza sin el marco.
+    const allowed = erode(mask, h, w, Math.round((p.marco / Math.max(5, p.ancho)) * w) + 2);
+    let size = textPx;
+    let bw = Math.round(textWidth(text, size) + 2 * TEXT_MARGIN * size);
+    if (bw > 0.7 * w) { size *= (0.7 * w) / bw; bw = Math.round(0.7 * w); }
+    const bh = Math.round(size * (1 + 2 * TEXT_MARGIN));
+    const c0 = Math.max(0, Math.round(w / 2 - bw / 2));
+    let bottom = h - 1;
+    const fits = (b) => {
+      for (let i = b - bh + 1; i <= b; i++) for (let j = c0; j < c0 + bw; j++) if (!allowed[i * w + j]) return false;
+      return true;
+    };
+    while (bottom - bh + 1 > 0 && !fits(bottom)) bottom--;
+    engrave(ctx, text, size, padX + c0, pad + Math.max(0, bottom - bh + 1), bw, bh, lit(p.max), lit(p.min), true);
+  }
+}
+
+/* Texto grabado con la misma fuente que el STL (la sirve la app): banda gruesa y letras finas. */
+const TEXT_MARGIN = 0.4;   // como text.MARGIN
+const engraveFont = new FontFace("Grabado", "url(/api/fuente.ttf)");
+engraveFont.load().then((f) => { document.fonts.add(f); queueDraw(); }).catch(() => { /* se usa la de sistema */ });
+const measureCtx = document.createElement("canvas").getContext("2d");
+function textBox(text, px) {
+  measureCtx.font = `100px Grabado, sans-serif`;
+  const m = measureCtx.measureText(text);
+  const k = px / Math.max(1, m.actualBoundingBoxAscent + m.actualBoundingBoxDescent);
+  return { size: 100 * k, width: m.width * k, ascent: m.actualBoundingBoxAscent * k, descent: m.actualBoundingBoxDescent * k };
+}
+const textWidth = (text, px) => textBox(text, px).width;
+function engrave(ctx, text, px, x, y, bw, bh, dark, light, fixedWidth) {
+  let box = textBox(text, px);
+  const room = bw - 2 * TEXT_MARGIN * px;
+  if (!fixedWidth && box.width > room) box = textBox(text, (px * room) / box.width);
+  ctx.fillStyle = dark;
+  ctx.fillRect(x, y, bw, bh);
+  ctx.fillStyle = light;
+  ctx.font = `${box.size}px Grabado, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(text, x + bw / 2, y + bh / 2 + (box.ascent - box.descent) / 2);
 }
 
 /* Media de gris de la foto entera tras el brillo, como hace Pillow con el contraste. */
@@ -462,7 +515,8 @@ function updateSummary(p, ok) {
   const cols = wrap ? Math.round(W / p.resolucion) : Math.max(2, Math.round((W - 2 * p.marco) / p.resolucion) + 1) + 2 * pad;
   const imgCols = wrap ? cols : cols - 2 * pad;
   const rows = Math.max(2, Math.round(imgCols / (p.forma === "plana" ? pieceAspect(p) : current.ancho / current.alto))) + 2 * pad;
-  const H = (rows - 1) * p.resolucion;
+  const textBand = p.texto.trim() && !(p.forma === "plana" && p.contorno !== "rectangulo") ? p.texto_mm * (1 + 2 * TEXT_MARGIN) : 0;
+  const H = (rows - 1) * p.resolucion + textBand;
   const tris = 4 * rows * cols;
   const fmt = (n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
 
@@ -496,6 +550,45 @@ function updateSummary(p, ok) {
   if (!onBed) $("#summary").textContent += " · no cabe de pie en la Ender 3 V3 KE (220 × 220 × 240 mm)";
 }
 
+/* ───────── Plantillas: ajustes guardados con un nombre (en la carpeta «datos») ───────── */
+let presets = [];
+async function loadPresets(selected = "") {
+  presets = await (await api("GET", "/api/plantillas")).json();
+  const sel = $("#plantilla");
+  sel.innerHTML = `<option value="">Plantillas…</option>`;
+  for (const t of presets) sel.append(new Option(t.nombre, t.nombre));
+  sel.value = selected;
+  $("#btnPresetDel").disabled = !selected;
+}
+$("#plantilla").addEventListener("change", (e) => {
+  const t = presets.find((x) => x.nombre === e.target.value);
+  $("#btnPresetDel").disabled = !t;
+  if (!t) return;
+  const { zoom, centro_x, centro_y, ...params } = t.ajustes;
+  writeParams({ ...readParams(), ...params });
+  showShapeFields();
+  queueDraw();
+  toast(`Plantilla «${t.nombre}» aplicada.`, "ok");
+});
+$("#btnPresetSave").addEventListener("click", async () => {
+  const name = prompt("Nombre de la plantilla:", $("#plantilla").value || "");
+  if (!name?.trim()) return;
+  try {
+    await api("PUT", `/api/plantillas/${encodeURIComponent(name.trim())}`, readParams());
+    await loadPresets(name.trim());
+    toast(`Plantilla «${name.trim()}» guardada.`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+});
+$("#btnPresetDel").addEventListener("click", async () => {
+  const name = $("#plantilla").value;
+  if (!name || !confirm(`¿Borrar la plantilla «${name}»?`)) return;
+  try {
+    await api("DELETE", `/api/plantillas/${encodeURIComponent(name)}`);
+    await loadPresets();
+    toast(`Plantilla «${name}» borrada.`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+});
+
 /* ───────── Generar STL y verlo en 3D ───────── */
 async function generate() {
   const p = readParams();
@@ -515,8 +608,9 @@ async function generate() {
     window.Visor.open({
       url: info.vista,
       name: current.nombre,
-      details: `${w} × ${h} × ${d} mm · ${tri} triángulos en el STL`,
+      details: `${w} × ${h} × ${d} mm · ${tri} triángulos · unos ${info.gramos} g de PLA`,
       download: info.stl,
+      settings: info.ajustes,
       radius: info.radio_mm,
       sphere: SPHERE.includes(info.forma),
     });
@@ -600,6 +694,7 @@ addEventListener("drop", (e) => {
 writeParams({ ...DEFAULTS, ...(store.get("params") || {}) });
 showShapeFields();
 loadMasks().catch((e) => toast(e.message, "err"));
+loadPresets().catch((e) => toast(e.message, "err"));
 loadImages().then(() => {
   const last = images.find((m) => m.id === store.get("ultima")) || images[0];
   if (last) select(last);

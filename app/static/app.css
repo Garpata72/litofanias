@@ -110,6 +110,13 @@ body.side-hidden #side { display: none; }
 .maskbox .thumbs { padding: 0; }
 .maskbox .thumbs button { background-size: contain; background-color: #000; }
 .maskbox .btn { align-self: flex-start; }
+.presets { display: grid; grid-template-columns: 1fr auto auto; gap: .3rem; align-items: center; }
+.presets select, .textfield input {
+  width: 100%; background: var(--bed); border: 1px solid var(--line); border-radius: var(--r); padding: .28rem .45rem; color: var(--text);
+}
+.presets select:focus, .textfield input:focus { border-color: var(--amber); outline: 0; }
+.presets .iconbtn { width: 1.9rem; height: 1.9rem; }
+.textfield { display: grid; gap: .3rem; font-size: .88rem; }
 .hint { margin: .2rem 0 0; color: var(--mute); font-size: .78rem; }
 
 /* ───────── Zona principal ───────── */

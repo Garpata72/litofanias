@@ -182,6 +182,9 @@ async function open(opts) {
   const dl = $("#lbDownload");
   dl.hidden = !opts.download;
   if (opts.download) dl.href = opts.download;
+  const st = $("#lbSettings");
+  st.hidden = !opts.settings;
+  if (opts.settings) st.href = opts.settings;
   $("#lbMsg").hidden = false;
   $("#lbMsg").textContent = "Cargando el modelo…";
   clear();

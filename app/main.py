@@ -21,6 +21,8 @@ from app import storage
 from litofania.contours import prepare_mask
 from litofania.generate import generate, generate_sphere
 from litofania.heightmap import FlatParams
+from litofania import printing
+from litofania import text as engraving
 from litofania.shapes import SHAPES
 from litofania.textures import flat_moon
 
@@ -56,6 +58,8 @@ class LitoRequest(BaseModel):
     contraste: float = Field(1.0, ge=0.2, le=3.0)
     gamma: float = Field(1.0, ge=0.2, le=3.0)
     invertir: bool = False
+    texto: str = Field("", max_length=60)           # texto grabado (vacío = sin texto)
+    texto_mm: float = Field(8.0, ge=3, le=40)       # alto de las letras
 
 
 @app.get("/api/salud")
@@ -189,14 +193,19 @@ def make_lithophane(req: LitoRequest) -> dict:
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
             return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura,
-                                   req.relleno)
+                                   req.relleno, req.texto, req.texto_mm)
         return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno,
-                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), req.relleno)
+                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y), req.relleno,
+                        req.texto, req.texto_mm)
 
     r = build(storage.MODELS / f"{name}.stl", p)
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
     preview_res = max(p.mm_per_px, math.sqrt(4 * width * (r.height_mm or width) / PREVIEW_TRIANGLES))
     build(storage.MODELS / f"{name}-vista.stl", replace(p, mm_per_px=preview_res))
+
+    size = (r.width_mm, r.height_mm, r.depth_mm)
+    (storage.MODELS / f"{name}-ajustes.txt").write_text(
+        printing.settings(req.forma, size, p.min_mm, p.max_mm, r.volume_mm3), encoding="utf-8")
 
     base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
     return {
@@ -207,6 +216,8 @@ def make_lithophane(req: LitoRequest) -> dict:
         "triangulos": r.triangles,
         "grosor_mm": [p.min_mm, p.max_mm],
         "radio_mm": r.radius_mm,
+        "gramos": round(printing.grams(r.volume_mm3)),
+        "ajustes": f"{base}-ajustes.txt",
     }
 
 
@@ -229,6 +240,51 @@ def download_model(image_id: str, shape: str) -> FileResponse:
     meta = storage.get_meta(image_id) or {}
     name = Path(meta.get("nombre", image_id)).stem
     return FileResponse(_model_path(image_id, shape), media_type="model/stl", filename=f"litofania-{shape}-{name}.stl")
+
+
+@app.get("/api/litofanias/{image_id}/{shape}-ajustes.txt")
+def download_settings(image_id: str, shape: str) -> FileResponse:
+    path = storage.MODELS / f"{image_id}-{shape}-ajustes.txt"
+    if not image_id.isalnum() or shape not in SHAPES or not path.exists():
+        raise HTTPException(404, "Todavía no se ha generado esa litofanía")
+    meta = storage.get_meta(image_id) or {}
+    name = Path(meta.get("nombre", image_id)).stem
+    return FileResponse(path, media_type="text/plain; charset=utf-8", filename=f"ajustes-{shape}-{name}.txt")
+
+
+@app.get("/api/fuente.ttf")
+def engraving_font() -> FileResponse:
+    """La fuente del texto grabado, para que la vista previa use la misma letra que el STL."""
+    return FileResponse(engraving.FONT, media_type="font/ttf")
+
+
+# ───────── Plantillas: ajustes guardados con un nombre ─────────
+
+@app.get("/api/plantillas")
+def list_presets() -> list[dict]:
+    return [{"nombre": k, "ajustes": v} for k, v in sorted(storage.load_presets().items(), key=lambda kv: kv[0].lower())]
+
+
+@app.put("/api/plantillas/{nombre}")
+def save_preset(nombre: str, ajustes: dict) -> dict:
+    nombre = nombre.strip()
+    if not nombre or len(nombre) > 40:
+        raise HTTPException(422, "El nombre de la plantilla debe tener entre 1 y 40 caracteres")
+    allowed = set(LitoRequest.model_fields) - {"imagen_id", "mascara_id"}
+    clean = {k: v for k, v in ajustes.items() if k in allowed}
+    presets = storage.load_presets()
+    presets[nombre] = clean
+    storage.save_presets(presets)
+    return {"nombre": nombre, "ajustes": clean}
+
+
+@app.delete("/api/plantillas/{nombre}")
+def delete_preset(nombre: str) -> dict:
+    presets = storage.load_presets()
+    if presets.pop(nombre, None) is None:
+        raise HTTPException(404, "No existe esa plantilla")
+    storage.save_presets(presets)
+    return {"ok": True}
 
 
 @app.middleware("http")
