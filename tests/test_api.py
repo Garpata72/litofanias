@@ -86,3 +86,24 @@ def test_sphere_and_dome(client):
     assert abs(dome["medidas_mm"][1] - 25) < 1      # media esfera de alto
     bad = client.post("/api/litofanias", json={"imagen_id": meta["id"], "forma": "esfera", "diametro": 50, "agujero": 45})
     assert bad.status_code == 422
+
+
+def test_custom_mask_upload_and_generate(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(), "image/png")}).json()
+    star = np.full((50, 80), 255, np.uint8)
+    star[10:40, 20:60] = 0
+    buf = io.BytesIO()
+    Image.fromarray(star).save(buf, format="PNG")
+    m = client.post("/api/mascaras", files={"archivo": ("rect.png", buf.getvalue(), "image/png")}).json()
+    assert (m["ancho"], m["alto"]) == (40, 30)
+    assert [x["id"] for x in client.get("/api/mascaras").json()] == [m["id"]]
+    assert client.get(f"/api/mascaras/{m['id']}/archivo").status_code == 200
+
+    body = {"imagen_id": meta["id"], "ancho": 40, "resolucion": 0.5, "marco": 2, "contorno": "propia"}
+    assert client.post("/api/litofanias", json=body).status_code == 422
+    info = client.post("/api/litofanias", json={**body, "mascara_id": m["id"], "zoom": 1.5, "centro_x": 0.2}).json()
+    assert info["medidas_mm"][:2] == [40.0, 30.0]
+
+    blank = io.BytesIO()
+    Image.new("L", (30, 30), 255).save(blank, format="PNG")
+    assert client.post("/api/mascaras", files={"archivo": ("b.png", blank.getvalue(), "image/png")}).status_code == 400

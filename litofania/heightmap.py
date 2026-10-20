@@ -38,9 +38,29 @@ def _finish(img: Image.Image, p: FlatParams) -> np.ndarray:
     return gray
 
 
-def load_gray(path: str, p: FlatParams, wrap: bool = False) -> np.ndarray:
+def crop_window(img_w: int, img_h: int, aspect: float, zoom: float = 1.0,
+                center: tuple[float, float] = (0.5, 0.5)) -> tuple[float, float, float, float]:
+    """Trozo de la foto (x, y, ancho, alto en píxeles) que ocupa una pieza de proporción `aspect` (ancho/alto).
+
+    Con zoom 1 es el mayor rectángulo de esa proporción que cabe en la foto; más zoom lo reduce. `center` es
+    el centro del trozo en fracciones de la foto, y se ajusta para no salirse de ella.
+    """
+    if img_w / img_h > aspect:
+        h = img_h / zoom
+        w = h * aspect
+    else:
+        w = img_w / zoom
+        h = w / aspect
+    x = float(np.clip(center[0] * img_w - w / 2, 0, img_w - w))
+    y = float(np.clip(center[1] * img_h - h / 2, 0, img_h - h))
+    return x, y, w, h
+
+
+def load_gray(path: str, p: FlatParams, wrap: bool = False, aspect: float | None = None,
+              zoom: float = 1.0, center: tuple[float, float] = (0.5, 0.5)) -> np.ndarray:
     """Carga la imagen, aplica ajustes básicos y la escala a la resolución de impresión.
 
+    `aspect` (ancho/alto de la pieza, por defecto el de la foto), `zoom` y `center` encuadran la foto.
     Devuelve valores 0..1 donde 1 es blanco (zona fina, deja pasar luz).
     """
     img = _adjusted(path, p)
@@ -48,8 +68,13 @@ def load_gray(path: str, p: FlatParams, wrap: bool = False) -> np.ndarray:
         cols = max(8, round(p.width_mm / p.mm_per_px))
     else:
         cols = max(2, round((p.width_mm - 2 * p.border_mm) / p.mm_per_px) + 1)
-    rows = max(2, round(cols * img.height / img.width))
-    return _finish(img.resize((cols, rows), Image.LANCZOS), p)
+    if aspect is None and zoom == 1.0:
+        rows = max(2, round(cols * img.height / img.width))
+        return _finish(img.resize((cols, rows), Image.LANCZOS), p)
+    aspect = aspect or img.width / img.height
+    rows = max(2, round(cols / aspect))
+    x, y, w, h = crop_window(img.width, img.height, cols / rows, zoom, center)
+    return _finish(img.resize((cols, rows), Image.LANCZOS, box=(x, y, x + w, y + h)), p)
 
 
 def sphere_gray(path: str, p: FlatParams, cols: int, rows: int, lat_top: float, lat_bottom: float,

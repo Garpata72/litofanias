@@ -60,7 +60,17 @@
           <option value="circulo">Círculo</option>
           <option value="ovalo">Óvalo</option>
           <option value="corazon">Corazón</option>
+          <option value="propia">Máscara propia…</option>
         </select></label>
+      <div class="maskbox" data-shapes="plana" data-contour="propia">
+        <div id="masks" class="thumbs"></div>
+        <button id="btnMask" class="btn small" type="button" title="Subir una silueta para recortar la pieza"><span data-icon="upload"></span> Subir máscara</button>
+        <input id="fileMask" type="file" accept="image/*" hidden>
+        <p class="hint">Silueta negra sobre blanco (o al revés), o un PNG con transparencia. La pieza toma su forma y su proporción.</p>
+      </div>
+      <label class="slider" data-shapes="plana"><span>Zoom de la foto</span><output data-for="zoom"></output>
+        <input id="zoom" type="range" min="1" max="4" step="0.05" value="1"></label>
+      <p class="hint" data-shapes="plana">Arrastra la foto en la vista «Encuadre» para colocarla; doble clic la centra.</p>
       <label class="num" data-shapes="plana arco"><span>Ancho total</span><input id="ancho" type="number" min="20" max="400" step="1" value="150"><i>mm</i></label>
       <label class="num" data-shapes="arco"><span>Ángulo del arco</span><input id="angulo" type="number" min="30" max="300" step="5" value="120"><i>grados</i></label>
       <label class="num" data-shapes="cilindro esfera cupula"><span>Diámetro exterior</span><input id="diametro" type="number" min="30" max="210" step="1" value="80"><i>mm</i></label>
@@ -93,8 +103,8 @@
     </div>
     <section id="views" hidden>
       <figure class="view">
-        <figcaption>Original</figcaption>
-        <div class="stage"><img id="imgOrig" alt="Imagen original"></div>
+        <figcaption id="capFrame">Original</figcaption>
+        <div class="stage"><canvas id="cvFrame" aria-label="Encuadre de la foto"></canvas></div>
       </figure>
       <figure class="view">
         <figcaption>A contraluz <span class="mute">(simulación)</span></figcaption>

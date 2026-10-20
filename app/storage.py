@@ -9,11 +9,13 @@ from pathlib import Path
 ROOT = Path(os.environ.get("LITOFANIAS_DATOS", Path(__file__).resolve().parent.parent / "datos"))
 IMAGES = ROOT / "imagenes"
 MODELS = ROOT / "stl"
+MASKS = ROOT / "mascaras"
 
 
 def ensure_dirs() -> None:
     IMAGES.mkdir(parents=True, exist_ok=True)
     MODELS.mkdir(parents=True, exist_ok=True)
+    MASKS.mkdir(parents=True, exist_ok=True)
 
 
 def new_id() -> str:
@@ -41,3 +43,17 @@ def get_meta(image_id: str) -> dict | None:
     if not image_id.isalnum() or not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def mask_path(mask_id: str) -> Path | None:
+    path = MASKS / f"{mask_id}.png"
+    return path if mask_id.isalnum() and path.exists() else None
+
+
+def save_mask_meta(mask_id: str, meta: dict) -> None:
+    (MASKS / f"{mask_id}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+
+def list_masks() -> list[dict]:
+    metas = [json.loads(p.read_text(encoding="utf-8")) for p in MASKS.glob("*.json")]
+    return sorted(metas, key=lambda m: m["creada"], reverse=True)

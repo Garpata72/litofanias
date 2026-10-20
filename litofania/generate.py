@@ -9,7 +9,9 @@ import numpy as np
 
 from dataclasses import replace
 
-from litofania.contours import contour_mask, erode
+from PIL import Image
+
+from litofania.contours import contour_mask, erode, load_mask
 from litofania.heightmap import FlatParams, load_gray, sphere_gray, thickness_map
 from litofania.shapes import build_solid, build_sphere, sphere_lats
 from litofania.stl import write_stl
@@ -25,19 +27,27 @@ class Result:
 
 
 def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana", angle_deg: float = 120.0,
-             contour: str = "rectangulo") -> Result:
+             contour: str = "rectangulo", mask_path: str | None = None, zoom: float = 1.0,
+             center: tuple[float, float] = (0.5, 0.5)) -> Result:
     """`p.width_mm` es el ancho desarrollado: el ancho de la plana, la longitud del arco o el perímetro del cilindro.
 
-    `contour` recorta la plana (corazón, círculo…); el marco sigue entonces el contorno."""
+    `contour` recorta la plana (corazón, círculo… o «propia» con la máscara de `mask_path`, que fija la
+    proporción de la pieza); el marco sigue entonces el contorno. En la plana, `zoom` y `center` encuadran
+    la foto dentro de la pieza."""
     wrap = shape == "cilindro"
+    framing = {"zoom": zoom, "center": center} if shape == "plana" else {}
     if shape == "plana" and contour != "rectangulo":
         no_frame = replace(p, border_mm=0)
-        t = thickness_map(load_gray(image_path, no_frame), no_frame)
-        mask = contour_mask(*t.shape, contour)
+        aspect = None
+        if contour == "propia":
+            with Image.open(mask_path) as m:
+                aspect = m.width / m.height
+        t = thickness_map(load_gray(image_path, no_frame, aspect=aspect, **framing), no_frame)
+        mask = load_mask(mask_path, *t.shape) if contour == "propia" else contour_mask(*t.shape, contour)
         t[mask & ~erode(mask, round(p.border_mm / p.mm_per_px))] = p.max_mm
         s = build_solid(t, p.mm_per_px, shape, mask=mask)
     else:
-        t = thickness_map(load_gray(image_path, p, wrap), p, wrap)
+        t = thickness_map(load_gray(image_path, p, wrap, **framing), p, wrap)
         s = build_solid(t, p.mm_per_px, shape, angle_deg)
     write_stl(out_path, s.verts, s.faces)
     used = s.verts[np.unique(s.faces)]

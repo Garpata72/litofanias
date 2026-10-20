@@ -16,6 +16,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from app import storage
+from litofania.contours import prepare_mask
 from litofania.generate import generate, generate_sphere
 from litofania.heightmap import FlatParams
 from litofania.shapes import SHAPES
@@ -34,7 +35,11 @@ class LitoRequest(BaseModel):
     forma: Literal["plana", "arco", "cilindro", "esfera", "cupula"] = "plana"
     ancho: float = Field(150.0, ge=20, le=400)      # plana y arco: ancho desarrollado
     angulo: float = Field(120.0, ge=30, le=300)     # arco
-    contorno: Literal["rectangulo", "redondeado", "circulo", "ovalo", "corazon"] = "rectangulo"   # plana
+    contorno: Literal["rectangulo", "redondeado", "circulo", "ovalo", "corazon", "propia"] = "rectangulo"   # plana
+    mascara_id: str | None = None                   # plana con contorno «propia»
+    zoom: float = Field(1.0, ge=1, le=8)            # plana: encuadre de la foto dentro de la pieza
+    centro_x: float = Field(0.5, ge=0, le=1)
+    centro_y: float = Field(0.5, ge=0, le=1)
     diametro: float = Field(80.0, ge=30, le=210)    # cilindro, esfera y cúpula: diámetro exterior
     agujero: float = Field(40.0, ge=10, le=200)     # esfera: diámetro de la abertura de abajo
     ajuste: Literal["centrada", "panoramica"] = "centrada"   # esfera y cúpula
@@ -62,17 +67,21 @@ def shutdown() -> dict:
     return {"ok": True}
 
 
-@app.post("/api/imagenes")
-async def upload_image(archivo: UploadFile) -> dict:
+async def _read_image(archivo: UploadFile) -> tuple[bytes, Image.Image]:
     data = await archivo.read()
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "La imagen supera los 40 MB")
     try:
         img = Image.open(io.BytesIO(data))
         img.verify()
-        img = Image.open(io.BytesIO(data))
+        return data, Image.open(io.BytesIO(data))
     except (UnidentifiedImageError, OSError):
         raise HTTPException(400, "El archivo no es una imagen válida")
+
+
+@app.post("/api/imagenes")
+async def upload_image(archivo: UploadFile) -> dict:
+    data, img = await _read_image(archivo)
 
     image_id = storage.new_id()
     ext = (img.format or "png").lower().replace("jpeg", "jpg")
@@ -101,6 +110,35 @@ def get_image(image_id: str) -> FileResponse:
     return FileResponse(path)
 
 
+@app.post("/api/mascaras")
+async def upload_mask(archivo: UploadFile) -> dict:
+    """Máscara propia para recortar la plana: una silueta (oscura sobre claro, clara sobre oscuro o PNG con transparencia)."""
+    _, img = await _read_image(archivo)
+    try:
+        mask = prepare_mask(img)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    mask_id = storage.new_id()
+    mask.save(storage.MASKS / f"{mask_id}.png")
+    meta = {"id": mask_id, "nombre": archivo.filename or "mascara.png", "ancho": mask.width, "alto": mask.height,
+            "creada": time.time()}
+    storage.save_mask_meta(mask_id, meta)
+    return meta
+
+
+@app.get("/api/mascaras")
+def list_masks() -> list[dict]:
+    return storage.list_masks()
+
+
+@app.get("/api/mascaras/{mask_id}/archivo")
+def get_mask(mask_id: str) -> FileResponse:
+    path = storage.mask_path(mask_id)
+    if path is None:
+        raise HTTPException(404, "Máscara no encontrada")
+    return FileResponse(path, media_type="image/png")
+
+
 @app.post("/api/litofanias")
 def make_lithophane(req: LitoRequest) -> dict:
     path = storage.image_path(req.imagen_id)
@@ -116,6 +154,11 @@ def make_lithophane(req: LitoRequest) -> dict:
         raise HTTPException(422, "El diámetro es demasiado pequeño para ese grosor")
     if req.forma == "esfera" and req.agujero >= req.diametro - 10:
         raise HTTPException(422, "La abertura debe ser al menos 10 mm menor que el diámetro")
+    mask = None
+    if req.forma == "plana" and req.contorno == "propia":
+        mask = storage.mask_path(req.mascara_id or "")
+        if mask is None:
+            raise HTTPException(422, "Elige o sube una máscara para el contorno propio")
 
     p = FlatParams(
         width_mm=width, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
@@ -127,7 +170,8 @@ def make_lithophane(req: LitoRequest) -> dict:
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
             return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura)
-        return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno)
+        return generate(str(path), str(out), params, req.forma, req.angulo, req.contorno,
+                        str(mask) if mask else None, req.zoom, (req.centro_x, req.centro_y))
 
     r = build(storage.MODELS / f"{name}.stl", p)
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.

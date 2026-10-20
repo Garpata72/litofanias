@@ -82,7 +82,7 @@ def test_contours_are_watertight_with_frame():
     from litofania.shapes import build_solid, signed_volume
 
     t = np.full((40, 60), 1.0)
-    for c in CONTOURS:
+    for c in CONTOURS[:-1]:   # todos menos «propia», que viene de una imagen
         mask = contour_mask(40, 60, c)
         t2 = t.copy()
         t2[mask & ~erode(mask, 3)] = 3.0
@@ -91,3 +91,32 @@ def test_contours_are_watertight_with_frame():
         assert signed_volume(s.verts, s.faces) > 0, c
     heart = contour_mask(40, 60, "corazon")
     assert heart[20, 30] and not heart[0, 30] and not heart[39, 0]   # centro dentro, muesca y esquinas fuera
+
+
+def test_custom_mask_with_hole_and_framing(tmp_path):
+    from litofania.contours import prepare_mask
+    from litofania.generate import generate
+    from litofania.heightmap import crop_window
+
+    # Anillo negro sobre fondo blanco, con margen: la máscara se recorta a la figura y conserva el hueco.
+    yy, xx = np.mgrid[:120, :200]
+    r = np.hypot(xx - 100, (yy - 60) * 1.0)
+    img = np.where((r < 50) & (r > 20), 0, 255).astype(np.uint8)
+    mask = prepare_mask(Image.fromarray(img))
+    assert abs(mask.width - mask.height) <= 1
+    arr = np.asarray(mask)
+    assert arr[arr.shape[0] // 2, arr.shape[1] // 2] == 0 and arr[arr.shape[0] // 2, 5] == 255
+    # La misma silueta en blanco sobre negro da la misma máscara.
+    assert np.array_equal(np.asarray(prepare_mask(Image.fromarray(255 - img))), arr)
+    mask.save(tmp_path / "m.png")
+
+    photo = tmp_path / "f.png"
+    Image.fromarray(np.tile(np.linspace(0, 255, 90, dtype=np.uint8), (60, 1))).save(photo)
+    p = FlatParams(width_mm=40, mm_per_px=0.5, border_mm=2)
+    r1 = generate(str(photo), str(tmp_path / "a.stl"), p, contour="propia", mask_path=str(tmp_path / "m.png"),
+                  zoom=2.0, center=(0.0, 0.5))
+    assert abs(r1.width_mm - r1.height_mm) < 1   # la pieza toma la proporción de la máscara
+
+    # Encuadre: zoom 2 a la izquierda del todo coge la mitad izquierda de la altura disponible.
+    assert crop_window(90, 60, 1.0, 2.0, (0.0, 0.5)) == (0.0, 15.0, 30.0, 30.0)
+    assert crop_window(90, 60, 1.5) == (0.0, 0.0, 90.0, 60.0)

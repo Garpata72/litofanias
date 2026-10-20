@@ -1,12 +1,15 @@
-"""Contornos para recortar la litofanía plana: rectángulo, esquinas redondeadas, círculo, óvalo y corazón.
+"""Contornos para recortar la litofanía plana: rectángulo, esquinas redondeadas, círculo, óvalo, corazón
+o una máscara propia subida como imagen.
 
 Las mismas fórmulas están en app/static/app.js para la vista previa; si se cambia una, cambiar la otra.
 """
 from __future__ import annotations
 
 import numpy as np
+from PIL import Image, ImageOps
 
-CONTOURS = ("rectangulo", "redondeado", "circulo", "ovalo", "corazon")
+CONTOURS = ("rectangulo", "redondeado", "circulo", "ovalo", "corazon", "propia")
+MASK_MAX_PX = 2000
 
 
 def contour_mask(rows: int, cols: int, contour: str) -> np.ndarray:
@@ -41,3 +44,37 @@ def erode(mask: np.ndarray, steps: int) -> np.ndarray:
         inner[1:-1, 1:-1] = m[1:-1, 1:-1] & m[:-2, 1:-1] & m[2:, 1:-1] & m[1:-1, :-2] & m[1:-1, 2:]
         m = inner
     return m
+
+
+def prepare_mask(img: Image.Image) -> Image.Image:
+    """Convierte una imagen subida en máscara: blanco dentro de la pieza, negro fuera, recortada a la figura.
+
+    Si la imagen tiene transparencia, la pieza es lo opaco. Si no, lo oscuro; y si lo oscuro es el fondo
+    (toca casi todo el borde), se invierte, así vale tanto una silueta negra sobre blanco como al revés.
+    """
+    img = ImageOps.exif_transpose(img)
+    inside = None
+    if img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info):
+        alpha = np.asarray(img.convert("RGBA"))[..., 3]
+        if alpha.min() < 128:
+            inside = alpha >= 128
+    if inside is None:
+        inside = np.asarray(img.convert("L")) < 128
+    edge = np.concatenate([inside[0], inside[-1], inside[:, 0], inside[:, -1]])
+    if edge.mean() > 0.5:
+        inside = ~inside
+    if inside.sum() < 0.01 * inside.size:
+        raise ValueError("No se distingue ninguna figura en la máscara")
+    rows, cols = np.nonzero(inside)
+    inside = inside[rows.min():rows.max() + 1, cols.min():cols.max() + 1]
+    out = Image.fromarray(inside.astype(np.uint8) * 255)
+    if max(out.size) > MASK_MAX_PX:
+        k = MASK_MAX_PX / max(out.size)
+        out = out.resize((max(1, round(out.width * k)), max(1, round(out.height * k))), Image.LANCZOS)
+    return out
+
+
+def load_mask(path: str, rows: int, cols: int) -> np.ndarray:
+    """Máscara propia (ya preparada) escalada a la rejilla de la pieza."""
+    img = Image.open(path).convert("L").resize((cols, rows), Image.BILINEAR)
+    return np.asarray(img) >= 128

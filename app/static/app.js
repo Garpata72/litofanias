@@ -75,7 +75,8 @@ function showShapeFields() {
   const forma = $("#forma").value;
   const ajuste = $("#ajuste").value;
   $$("[data-shapes]").forEach((el) => {
-    el.hidden = !el.dataset.shapes.split(" ").includes(forma) || (el.dataset.fit && el.dataset.fit !== ajuste);
+    el.hidden = !el.dataset.shapes.split(" ").includes(forma) || (el.dataset.fit && el.dataset.fit !== ajuste)
+      || (el.dataset.contour && el.dataset.contour !== $("#contorno").value);
   });
 }
 /* Ancho de la imagen ya colocada: el de la plana, la longitud del arco o el perímetro del cilindro. */
@@ -95,6 +96,7 @@ function validParams(p) {
   if (!ROUND.includes(p.forma) && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
   if (ROUND.includes(p.forma) && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
   if (p.forma === "esfera" && p.agujero >= p.diametro - 10) { $("#agujero").classList.add("bad"); ok = false; }
+  if (needsMask(p)) ok = false;
   return ok;
 }
 
@@ -102,6 +104,81 @@ function validParams(p) {
 let images = [];
 let current = null;      // ficha de la imagen abierta
 const source = new Image();
+let masks = [];
+let maskId = store.get("mascara");
+const maskImg = new Image();
+let frame = { zoom: 1, cx: 0.5, cy: 0.5 };   // encuadre de la foto en la plana, guardado por imagen
+
+const maskMeta = () => masks.find((m) => m.id === maskId);
+const customMask = (p) => p.forma === "plana" && p.contorno === "propia";
+const needsMask = (p) => customMask(p) && !maskMeta();
+
+async function loadMasks() {
+  masks = await (await api("GET", "/api/mascaras")).json();
+  const box = $("#masks");
+  box.innerHTML = masks.length ? "" : `<div class="none">Todavía no has subido ninguna máscara.</div>`;
+  for (const m of masks.slice(0, 24)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.title = m.nombre;
+    b.style.backgroundImage = `url(/api/mascaras/${m.id}/archivo)`;
+    b.classList.toggle("sel", m.id === maskId);
+    b.addEventListener("click", () => selectMask(m.id));
+    box.append(b);
+  }
+  if (maskMeta() && !maskImg.src.includes(maskId)) maskImg.src = `/api/mascaras/${maskId}/archivo`;
+  queueDraw();
+}
+
+function selectMask(id) {
+  maskId = id;
+  store.set("mascara", id);
+  maskImg.src = `/api/mascaras/${id}/archivo`;
+  $$("#masks button").forEach((b) => b.classList.toggle("sel", b.style.backgroundImage.includes(id)));
+  queueDraw();
+}
+
+async function uploadMask(file) {
+  if (!file || !file.type.startsWith("image/")) { toast("Eso no parece una imagen.", "err"); return; }
+  const fd = new FormData();
+  fd.append("archivo", file);
+  try {
+    const meta = await (await api("POST", "/api/mascaras", fd)).json();
+    maskId = meta.id;
+    await loadMasks();
+    selectMask(meta.id);
+    $("#contorno").value = "propia";
+    showShapeFields();
+    toast(`Máscara «${meta.nombre}» lista.`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+/* ───────── Encuadre ─────────
+   Mismo cálculo que crop_window en litofania/heightmap.py: si se cambia uno, cambiar el otro. */
+function pieceAspect(p) {
+  return customMask(p) && maskMeta() ? maskMeta().ancho / maskMeta().alto : current.ancho / current.alto;
+}
+function cropWindow(p) {
+  const W = source.naturalWidth, H = source.naturalHeight;
+  if (p.forma !== "plana") return { x: 0, y: 0, w: W, h: H };
+  const a = pieceAspect(p), z = frame.zoom;
+  let w, h;
+  if (W / H > a) { h = H / z; w = h * a; } else { w = W / z; h = w / a; }
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  return { x: clamp(frame.cx * W - w / 2, 0, W - w), y: clamp(frame.cy * H - h / 2, 0, H - h), w, h };
+}
+function setFrame(f, save = true) {
+  frame = { ...frame, ...f };
+  if (source.naturalWidth) {   // deja el centro donde de verdad queda tras no salirse de la foto
+    const win = cropWindow(readParams());
+    frame.cx = (win.x + win.w / 2) / source.naturalWidth;
+    frame.cy = (win.y + win.h / 2) / source.naturalHeight;
+  }
+  $("#zoom").value = frame.zoom;
+  showSliderValues();
+  if (save && current) store.set(`encuadre.${current.id}`, frame);
+  queueDraw();
+}
 
 async function loadImages() {
   images = await (await api("GET", "/api/imagenes")).json();
@@ -125,7 +202,9 @@ function select(meta) {
   $("#empty").hidden = true;
   $("#views").hidden = false;
   $("#btnStl").disabled = false;
-  $("#imgOrig").src = `/api/imagenes/${meta.id}/archivo`;
+  frame = { zoom: 1, cx: 0.5, cy: 0.5, ...(store.get(`encuadre.${meta.id}`) || {}) };
+  $("#zoom").value = frame.zoom;
+  showSliderValues();
   source.src = `/api/imagenes/${meta.id}/archivo`;
   $$("#images button").forEach((b) => b.classList.toggle("sel", b.title === meta.nombre && b.style.backgroundImage.includes(meta.id)));
   if (innerWidth <= 900) document.body.classList.remove("side-open");
@@ -205,21 +284,27 @@ function draw() {
   updateSummary(p, ok);
   if (!current || !source.complete || !source.naturalWidth) return;
 
+  const flat = p.forma === "plana";
+  if (customMask(p) && !(maskImg.complete && maskImg.naturalWidth)) return;   // se redibuja al cargar
   const wrap = p.forma === "cilindro";
-  const cut = p.forma === "plana" && p.contorno !== "rectangulo";   // el marco sigue el contorno
-  const frame = SPHERE.includes(p.forma) || cut ? 0 : p.marco;
-  const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * frame));
-  const scale = Math.min(1, PREVIEW_MAX / Math.max(source.naturalWidth, source.naturalHeight));
-  const w = Math.max(2, Math.round(source.naturalWidth * scale));
-  const h = Math.max(2, Math.round(source.naturalHeight * scale));
-  const pad = Math.round((frame / inner) * w);
+  const cut = flat && p.contorno !== "rectangulo";   // el marco sigue el contorno
+  const border = SPHERE.includes(p.forma) || cut ? 0 : p.marco;
+  const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * border));
+  const win = cropWindow(p);
+  const scale = PREVIEW_MAX / Math.max(win.w, win.h);
+  const w = Math.max(2, Math.round(win.w * Math.min(scale, flat ? 4 : 1)));
+  const h = Math.max(2, Math.round(win.h * Math.min(scale, flat ? 4 : 1)));
+  const pad = Math.round((border / inner) * w);
   const padX = wrap ? 0 : pad;
+  const mask = cut ? shapeMask(p, h, w) : null;
+  const band = cut ? erode(mask, h, w, Math.round((p.marco / Math.max(5, p.ancho)) * w)) : null;
+  drawFrame(p, win, w, h, mask, band);
 
   const cv = $("#cvLit");
   cv.width = w + 2 * padX;
   cv.height = h + 2 * pad;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(source, padX, pad, w, h);
+  ctx.drawImage(source, win.x, win.y, win.w, win.h, padX, pad, w, h);
   const img = ctx.getImageData(padX, pad, w, h);
   const d = img.data;
 
@@ -245,28 +330,65 @@ function draw() {
   ctx.fillStyle = `rgb(${255 * edge},${222 * edge},${170 * edge})`;
   ctx.fillRect(0, 0, cv.width, cv.height);
   if (cut) {
-    const mask = contourMask(h, w, p.contorno);
-    const inner = erode(mask, h, w, Math.round((p.marco / Math.max(5, p.ancho)) * w));
     for (let k = 0; k < mask.length; k++) {
       const i = 4 * k;
       if (!mask[k]) d[i + 3] = 0;
-      else if (!inner[k]) { d[i] = 255 * edge; d[i + 1] = 222 * edge; d[i + 2] = 170 * edge; }
+      else if (!band[k]) { d[i] = 255 * edge; d[i + 1] = 222 * edge; d[i + 2] = 170 * edge; }
     }
     ctx.clearRect(0, 0, cv.width, cv.height);
   }
   ctx.putImageData(img, padX, pad);
 }
 
+/* Máscara de la pieza en la rejilla de la vista previa: un contorno de fórmula o la máscara subida. */
+function shapeMask(p, rows, cols) {
+  if (!customMask(p)) return contourMask(rows, cols, p.contorno);
+  const c = document.createElement("canvas");
+  c.width = cols;
+  c.height = rows;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(maskImg, 0, 0, cols, rows);
+  const d = ctx.getImageData(0, 0, cols, rows).data;
+  const m = new Uint8Array(rows * cols);
+  for (let k = 0; k < m.length; k++) m[k] = d[4 * k] >= 128 ? 1 : 0;
+  return m;
+}
+
+/* Primera vista: la foto tal y como entra en la pieza. En la plana se puede arrastrar y hacer zoom;
+   lo que queda fuera del contorno se oscurece y la franja del marco se marca en ámbar. */
+function drawFrame(p, win, w, h, mask, band) {
+  const flat = p.forma === "plana";
+  const cv = $("#cvFrame");
+  cv.classList.toggle("movable", flat);
+  $("#capFrame").textContent = flat ? "Encuadre (arrastra la foto)" : "Original";
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(source, win.x, win.y, win.w, win.h, 0, 0, w, h);
+  if (!mask) return;
+  const over = new ImageData(w, h);
+  for (let k = 0; k < mask.length; k++) {
+    const i = 4 * k;
+    if (!mask[k]) { over.data[i] = 16; over.data[i + 1] = 19; over.data[i + 2] = 24; over.data[i + 3] = 215; }
+    else if (!band[k]) { over.data[i] = 251; over.data[i + 1] = 191; over.data[i + 2] = 36; over.data[i + 3] = 120; }
+  }
+  const tmp = document.createElement("canvas");
+  tmp.width = w;
+  tmp.height = h;
+  tmp.getContext("2d").putImageData(over, 0, 0);
+  ctx.drawImage(tmp, 0, 0);
+}
+
 function updateSummary(p, ok) {
   if (!current) { $("#summary").textContent = ""; return; }
-  if (!ok) { $("#summary").textContent = "Revisa los valores marcados en rojo."; $("#btnStl").disabled = true; return; }
+  if (!ok) { $("#summary").textContent = needsMask(p) ? "Sube o elige una máscara para el contorno propio." : "Revisa los valores marcados en rojo."; $("#btnStl").disabled = true; return; }
   $("#btnStl").disabled = false;
   const wrap = p.forma === "cilindro";
   const W = developed(p);
   const pad = Math.round(p.marco / p.resolucion);
   const cols = wrap ? Math.round(W / p.resolucion) : Math.max(2, Math.round((W - 2 * p.marco) / p.resolucion) + 1) + 2 * pad;
   const imgCols = wrap ? cols : cols - 2 * pad;
-  const rows = Math.max(2, Math.round((imgCols * current.alto) / current.ancho)) + 2 * pad;
+  const rows = Math.max(2, Math.round(imgCols / (p.forma === "plana" ? pieceAspect(p) : current.ancho / current.alto))) + 2 * pad;
   const H = (rows - 1) * p.resolucion;
   const tris = 4 * rows * cols;
   const fmt = (n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
@@ -285,7 +407,8 @@ function updateSummary(p, ok) {
     return;
   }
   if (p.forma === "plana") {
-    size = `${fmt(W)} × ${fmt(H)} × ${fmt(p.max)} mm${p.contorno !== "rectangulo" ? ` · ${$("#contorno").selectedOptions[0].text.toLowerCase()}` : ""}`;
+    const shape = customMask(p) ? `máscara «${maskMeta().nombre}»` : $("#contorno").selectedOptions[0].text.toLowerCase();
+    size = `${fmt(W)} × ${fmt(H)} × ${fmt(p.max)} mm${p.contorno !== "rectangulo" ? ` · ${shape}` : ""}`;
     onBed = W <= BED.x && H <= BED.z;
   } else if (p.forma === "arco") {
     const theta = (p.angulo * Math.PI) / 180, R = W / theta;
@@ -310,7 +433,10 @@ async function generate() {
   const label = btn.lastChild.textContent;
   btn.lastChild.textContent = " Generando…";
   try {
-    const info = await (await api("POST", "/api/litofanias", { imagen_id: current.id, ...p })).json();
+    const info = await (await api("POST", "/api/litofanias", {
+      imagen_id: current.id, ...p, mascara_id: customMask(p) ? maskId : null,
+      zoom: frame.zoom, centro_x: frame.cx, centro_y: frame.cy,
+    })).json();
     const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 }));
     const tri = info.triangulos.toLocaleString("es-ES");
     window.Visor.open({
@@ -346,7 +472,38 @@ $("#btnStl").addEventListener("click", generate);
 $("#btnView").addEventListener("click", () => $("#file3d").click());
 $("#file3d").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) window.Visor.open({ file: f, name: f.name }); e.target.value = ""; });
 for (const k of PARAMS) $(`#${k}`).addEventListener("input", () => { showSliderValues(); showShapeFields(); queueDraw(); });
-source.addEventListener("load", queueDraw);
+source.addEventListener("load", () => setFrame({}, false));
+maskImg.addEventListener("load", () => setFrame({}, false));
+$("#btnMask").addEventListener("click", () => $("#fileMask").click());
+$("#fileMask").addEventListener("change", (e) => { uploadMask(e.target.files[0]); e.target.value = ""; });
+$("#zoom").addEventListener("input", () => setFrame({ zoom: Number($("#zoom").value) }));
+$("#contorno").addEventListener("change", () => setFrame({}, false));
+
+let dragFrom = null;
+const cvFrame = $("#cvFrame");
+cvFrame.addEventListener("pointerdown", (e) => {
+  if (!current || readParams().forma !== "plana") return;
+  dragFrom = { x: e.clientX, y: e.clientY, cx: frame.cx, cy: frame.cy };
+  cvFrame.setPointerCapture(e.pointerId);
+});
+cvFrame.addEventListener("pointermove", (e) => {
+  if (!dragFrom) return;
+  const win = cropWindow(readParams());
+  const k = win.w / cvFrame.clientWidth;   // píxeles de la foto por píxel de pantalla
+  setFrame({
+    cx: dragFrom.cx - ((e.clientX - dragFrom.x) * k) / source.naturalWidth,
+    cy: dragFrom.cy - ((e.clientY - dragFrom.y) * k) / source.naturalHeight,
+  }, false);
+});
+const endDrag = () => { if (dragFrom) { dragFrom = null; setFrame({}); } };
+cvFrame.addEventListener("pointerup", endDrag);
+cvFrame.addEventListener("pointercancel", endDrag);
+cvFrame.addEventListener("wheel", (e) => {
+  if (!current || readParams().forma !== "plana") return;
+  e.preventDefault();
+  setFrame({ zoom: Math.min(4, Math.max(1, frame.zoom * Math.exp(-e.deltaY * 0.0015))) });
+}, { passive: false });
+cvFrame.addEventListener("dblclick", () => { if (current) setFrame({ zoom: 1, cx: 0.5, cy: 0.5 }); });
 
 $("#btnQuit").addEventListener("click", async () => {
   try { await api("POST", "/api/apagar", {}); } catch { /* ya se ha cerrado */ }
@@ -369,6 +526,7 @@ addEventListener("drop", (e) => {
 /* ───────── Arranque ───────── */
 writeParams({ ...DEFAULTS, ...(store.get("params") || {}) });
 showShapeFields();
+loadMasks().catch((e) => toast(e.message, "err"));
 loadImages().then(() => {
   const last = images.find((m) => m.id === store.get("ultima")) || images[0];
   if (last) select(last);
