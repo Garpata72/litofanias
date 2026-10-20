@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Litofanías</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="/icono.png">
+</head>
+<body>
+
+<header id="top">
+  <button id="btnMenu" class="iconbtn" data-icon="menu" title="Mostrar u ocultar el panel de ajustes" aria-label="Mostrar u ocultar el panel de ajustes"></button>
+  <a class="brand" href="#" aria-label="Litofanías, inicio">
+    <img src="/icono.png" width="26" height="26" alt="">
+    <span class="txt">Lito<b>fanías</b></span>
+  </a>
+  <span class="spacer"></span>
+  <button id="btnOpen" class="btn primary" type="button" title="Abrir una imagen (también puedes arrastrarla a la ventana)">
+    <span data-icon="plus"></span><span class="txt">Abrir imagen</span>
+  </button>
+  <input id="file" type="file" accept="image/*" hidden>
+  <button id="btnQuit" class="iconbtn" type="button" data-icon="power" title="Cerrar Litofanías" aria-label="Cerrar Litofanías"></button>
+</header>
+
+<div id="shell">
+  <aside id="side">
+    <div class="sidehead"><span>Imágenes</span></div>
+    <div id="images" class="thumbs"></div>
+
+    <div class="sidehead"><span>Ajustes de imagen</span><button id="btnReset" class="iconbtn" data-icon="refresh" title="Volver a los valores iniciales" aria-label="Restablecer ajustes"></button></div>
+    <div class="fields">
+      <label class="slider"><span>Brillo</span><output data-for="brillo"></output>
+        <input id="brillo" type="range" min="0.2" max="3" step="0.05" value="1"></label>
+      <label class="slider"><span>Contraste</span><output data-for="contraste"></output>
+        <input id="contraste" type="range" min="0.2" max="3" step="0.05" value="1"></label>
+      <label class="slider"><span>Gamma</span><output data-for="gamma"></output>
+        <input id="gamma" type="range" min="0.2" max="3" step="0.05" value="1"></label>
+      <label class="check"><input id="invertir" type="checkbox"> Invertir claros y oscuros</label>
+    </div>
+
+    <div class="sidehead"><span>Litofanía</span></div>
+    <div class="fields">
+      <label class="fsel"><span>Forma</span>
+        <select id="forma" aria-label="Forma">
+          <option value="plana">Plana</option>
+          <option disabled>Arco (próximamente)</option>
+          <option disabled>Cilindro (próximamente)</option>
+          <option disabled>Esfera (próximamente)</option>
+        </select></label>
+      <label class="num"><span>Ancho total</span><input id="ancho" type="number" min="20" max="210" step="1" value="150"><i>mm</i></label>
+      <label class="num"><span>Grosor mínimo</span><input id="min" type="number" min="0.4" max="3" step="0.1" value="0.8"><i>mm</i></label>
+      <label class="num"><span>Grosor máximo</span><input id="max" type="number" min="1" max="8" step="0.1" value="3"><i>mm</i></label>
+      <label class="num"><span>Resolución</span><input id="resolucion" type="number" min="0.05" max="1" step="0.05" value="0.2"><i>mm/px</i></label>
+      <label class="num"><span>Marco</span><input id="marco" type="number" min="0" max="20" step="0.5" value="3"><i>mm</i></label>
+      <p class="hint">Valores pensados para una Ender 3 V3 KE con boquilla de 0,4 mm.</p>
+    </div>
+  </aside>
+  <div id="scrim"></div>
+
+  <main id="main">
+    <div class="bar">
+      <h1 id="title">Sin imagen</h1>
+      <p id="summary" aria-live="polite"></p>
+      <button id="btnStl" class="btn primary" type="button" disabled><span data-icon="download"></span> Generar STL</button>
+    </div>
+    <div id="empty" class="empty">
+      <span data-icon="upload"></span>
+      <div class="big">Abre o arrastra una foto para empezar</div>
+      <div>JPG o PNG. Se guarda en la carpeta «datos» de la app, todo sin internet.</div>
+    </div>
+    <section id="views" hidden>
+      <figure class="view">
+        <figcaption>Original</figcaption>
+        <div class="stage"><img id="imgOrig" alt="Imagen original"></div>
+      </figure>
+      <figure class="view">
+        <figcaption>A contraluz <span class="mute">(simulación)</span></figcaption>
+        <div class="stage lit"><canvas id="cvLit" aria-label="Simulación de la litofanía iluminada"></canvas></div>
+      </figure>
+    </section>
+  </main>
+</div>
+
+<div id="dropzone" hidden>
+  <div class="box">
+    <span data-icon="upload"></span>
+    <div class="big">Suelta la imagen para abrirla</div>
+  </div>
+</div>
+<div id="toast"><span class="msgtext"></span></div>
+<div id="closed" hidden><div><div class="big">Litofanías cerrada</div>Puedes cerrar esta pestaña.</div></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
