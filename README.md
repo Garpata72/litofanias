@@ -2,7 +2,7 @@
 
 App local para ajustar una foto y convertirla en una litofanía lista para imprimir en 3D. Funciona en tu ordenador, sin internet (solo la primera instalación descarga las librerías).
 
-Genera litofanías **planas**, en **arco** y en **cilindro** (para lámpara); la esfera y las cajas de luz llegarán en las próximas fases.
+Genera litofanías **planas**, en **arco**, en **cilindro** (para lámpara), en **cúpula** (media esfera) y en **esfera** con abertura para la luz (tipo lámpara luna). Las cajas de luz y los soportes llegarán en la siguiente fase.
 
 ## Arrancar con un acceso directo
 
@@ -24,7 +24,7 @@ Puerto por defecto: **8040** (8000, 8010 y 8020 los usan otras apps).
 
 1. **Abrir imagen** o arrastrarla a la ventana.
 2. Ajusta brillo, contraste, gamma o invierte; la vista **A contraluz** simula cómo se verá impresa.
-3. Elige la forma (plana, arco o cilindro), el tamaño, los grosores, la resolución y el marco, y pulsa **Generar y ver en 3D**. En el arco se indica el ancho desarrollado y el ángulo; en el cilindro, el diámetro exterior (la imagen da la vuelta completa y el marco va solo arriba y abajo).
+3. Elige la forma (plana, arco o cilindro), el tamaño, los grosores, la resolución y el marco, y pulsa **Generar y ver en 3D**. En el arco se indica el ancho desarrollado y el ángulo; en el cilindro, el diámetro exterior (la imagen da la vuelta completa y el marco va solo arriba y abajo). En la esfera y la cúpula, el diámetro exterior, la abertura de abajo (esfera) y cómo va la foto: **centrada delante** (ocupando los grados que elijas, con fondo claro alrededor) o **panorámica** (estirada a toda la esfera, ideal para fotos 2:1).
 4. En el visor 3D gira la pieza, cambia entre **Relieve** (luz frontal) y **Contraluz** (cómo se verá encendida) y pulsa **Descargar STL** cuando te guste.
 
 Con **Ver STL / 3MF** (o arrastrando el archivo a la ventana) puedes abrir cualquier STL o 3MF de tu ordenador en el mismo visor. El visor usa three.js, incluido en `app/static/vendor/three` (licencia MIT), así que funciona sin internet.

@@ -16,7 +16,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from app import storage
-from litofania.generate import generate
+from litofania.generate import generate, generate_sphere
 from litofania.heightmap import FlatParams
 from litofania.shapes import SHAPES
 
@@ -31,10 +31,13 @@ SERVER = None  # lo pone run.py para poder cerrar la app desde el botón de apag
 
 class LitoRequest(BaseModel):
     imagen_id: str
-    forma: Literal["plana", "arco", "cilindro"] = "plana"
+    forma: Literal["plana", "arco", "cilindro", "esfera", "cupula"] = "plana"
     ancho: float = Field(150.0, ge=20, le=400)      # plana y arco: ancho desarrollado
     angulo: float = Field(120.0, ge=30, le=300)     # arco
-    diametro: float = Field(80.0, ge=30, le=210)    # cilindro: diámetro exterior
+    diametro: float = Field(80.0, ge=30, le=210)    # cilindro, esfera y cúpula: diámetro exterior
+    agujero: float = Field(40.0, ge=10, le=200)     # esfera: diámetro de la abertura de abajo
+    ajuste: Literal["centrada", "panoramica"] = "centrada"   # esfera y cúpula
+    cobertura: float = Field(150.0, ge=40, le=360)  # esfera y cúpula centradas: grados de ancho de la foto
     min: float = Field(0.8, ge=0.4, le=3.0)
     max: float = Field(3.0, ge=1.0, le=8.0)
     resolucion: float = Field(0.2, ge=0.05, le=1.0)
@@ -104,11 +107,14 @@ def make_lithophane(req: LitoRequest) -> dict:
         raise HTTPException(404, "Imagen no encontrada")
     if req.min >= req.max:
         raise HTTPException(422, "El grosor mínimo debe ser menor que el máximo")
-    width = math.pi * req.diametro if req.forma == "cilindro" else req.ancho
-    if req.forma != "cilindro" and width <= 2 * req.marco + 5:
+    round_shape = req.forma in ("cilindro", "esfera", "cupula")
+    width = math.pi * req.diametro if round_shape else req.ancho
+    if not round_shape and width <= 2 * req.marco + 5:
         raise HTTPException(422, "El marco es demasiado ancho para ese tamaño")
-    if req.forma == "cilindro" and req.diametro <= 2 * req.max + 10:
+    if round_shape and req.diametro <= 2 * req.max + 10:
         raise HTTPException(422, "El diámetro es demasiado pequeño para ese grosor")
+    if req.forma == "esfera" and req.agujero >= req.diametro - 10:
+        raise HTTPException(422, "La abertura debe ser al menos 10 mm menor que el diámetro")
 
     p = FlatParams(
         width_mm=width, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
@@ -116,11 +122,16 @@ def make_lithophane(req: LitoRequest) -> dict:
         gamma=req.gamma, invert=req.invertir,
     )
     name = f"{req.imagen_id}-{req.forma}"
-    r = generate(str(path), str(storage.MODELS / f"{name}.stl"), p, req.forma, req.angulo)
 
+    def build(out: Path, params: FlatParams):
+        if req.forma in ("esfera", "cupula"):
+            return generate_sphere(str(path), str(out), params, req.forma, req.diametro, req.agujero, req.ajuste, req.cobertura)
+        return generate(str(path), str(out), params, req.forma, req.angulo)
+
+    r = build(storage.MODELS / f"{name}.stl", p)
     # Copia más ligera para el visor 3D: misma pieza con menos triángulos si la completa es muy grande.
     preview_res = max(p.mm_per_px, math.sqrt(4 * width * (r.height_mm or width) / PREVIEW_TRIANGLES))
-    generate(str(path), str(storage.MODELS / f"{name}-vista.stl"), replace(p, mm_per_px=preview_res), req.forma, req.angulo)
+    build(storage.MODELS / f"{name}-vista.stl", replace(p, mm_per_px=preview_res))
 
     base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
     return {

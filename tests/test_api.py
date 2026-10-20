@@ -75,3 +75,14 @@ def test_curved_shapes(client):
     assert "litofania-cilindro-c.stl" in client.get(cyl["stl"]).headers["content-disposition"]
     assert client.get(cyl["vista"]).status_code == 200
     assert client.get(f"/api/litofanias/{meta['id']}/esfera.stl").status_code == 404
+
+
+def test_sphere_and_dome(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("s.png", _png(80, 50), "image/png")}).json()
+    sph = client.post("/api/litofanias", json={"imagen_id": meta["id"], "forma": "esfera", "diametro": 50, "agujero": 20, "resolucion": 1}).json()
+    assert abs(sph["medidas_mm"][0] - 50) < 1 and sph["radio_mm"] == 25
+    assert client.get(sph["stl"]).status_code == 200
+    dome = client.post("/api/litofanias", json={"imagen_id": meta["id"], "forma": "cupula", "diametro": 50, "ajuste": "panoramica", "resolucion": 1}).json()
+    assert abs(dome["medidas_mm"][1] - 25) < 1      # media esfera de alto
+    bad = client.post("/api/litofanias", json={"imagen_id": meta["id"], "forma": "esfera", "diametro": 50, "agujero": 45})
+    assert bad.status_code == 422

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from litofania.heightmap import FlatParams, load_gray, thickness_map
-from litofania.shapes import build_solid
+import math
+
+from litofania.heightmap import FlatParams, load_gray, sphere_gray, thickness_map
+from litofania.shapes import build_solid, build_sphere, sphere_lats
 from litofania.stl import write_stl
 
 
@@ -27,6 +29,21 @@ def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana"
     if shape != "plana":   # en las curvas la altura va en z (se imprimen de pie)
         w, h, d = w, d, h
     return Result(width_mm=w, height_mm=h, depth_mm=d, triangles=len(s.faces), radius_mm=s.radius_mm)
+
+
+def generate_sphere(image_path: str, out_path: str, p: FlatParams, shape: str, diameter_mm: float,
+                    hole_mm: float = 40.0, fit: str = "centrada", coverage_deg: float = 150.0) -> Result:
+    """Esfera con abertura abajo o cúpula (media esfera). `diameter_mm` es el diámetro exterior."""
+    radius = diameter_mm / 2
+    lat_top, lat_bottom = sphere_lats(radius, shape, hole_mm, p.mm_per_px)
+    cols = max(16, round(2 * math.pi * radius / p.mm_per_px))
+    rows = max(4, round(radius * (lat_top - lat_bottom) / p.mm_per_px) + 1)
+    gray = sphere_gray(image_path, p, cols, rows, lat_top, lat_bottom, fit, coverage_deg)
+    t = p.min_mm + (1.0 - gray) * (p.max_mm - p.min_mm)
+    s = build_sphere(t, radius, lat_top, lat_bottom)
+    write_stl(out_path, s.verts, s.faces)
+    w, d, h = (s.verts.max(axis=0) - s.verts.min(axis=0)).tolist()
+    return Result(width_mm=w, height_mm=h, depth_mm=d, triangles=len(s.faces), radius_mm=radius)
 
 
 def generate_flat(image_path: str, out_path: str, p: FlatParams) -> Result:

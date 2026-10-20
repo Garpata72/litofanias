@@ -41,10 +41,11 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "ancho", "angulo", "diametro", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
-  forma: "plana", ancho: 150, angulo: 120, diametro: 80, min: 0.8, max: 3, resolucion: 0.2, marco: 3,
+  forma: "plana", ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150,
+  min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
 const store = {
@@ -72,22 +73,28 @@ function showSliderValues() {
 }
 function showShapeFields() {
   const forma = $("#forma").value;
-  $$("[data-shapes]").forEach((el) => (el.hidden = !el.dataset.shapes.split(" ").includes(forma)));
+  const ajuste = $("#ajuste").value;
+  $$("[data-shapes]").forEach((el) => {
+    el.hidden = !el.dataset.shapes.split(" ").includes(forma) || (el.dataset.fit && el.dataset.fit !== ajuste);
+  });
 }
 /* Ancho de la imagen ya colocada: el de la plana, la longitud del arco o el perímetro del cilindro. */
-const developed = (p) => (p.forma === "cilindro" ? Math.PI * p.diametro : p.ancho);
+const ROUND = ["cilindro", "esfera", "cupula"];
+const SPHERE = ["esfera", "cupula"];
+const developed = (p) => (ROUND.includes(p.forma) ? Math.PI * p.diametro : p.ancho);
 
 function validParams(p) {
   let ok = true;
-  for (const k of ["ancho", "angulo", "diametro", "min", "max", "resolucion", "marco"]) {
+  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "min", "max", "resolucion", "marco"]) {
     const el = $(`#${k}`);
     const bad = !el.closest("label").hidden && !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
     el.classList.toggle("bad", bad);
     ok &&= !bad;
   }
   if (p.min >= p.max) { $("#min").classList.add("bad"); $("#max").classList.add("bad"); ok = false; }
-  if (p.forma !== "cilindro" && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
-  if (p.forma === "cilindro" && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
+  if (!ROUND.includes(p.forma) && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
+  if (ROUND.includes(p.forma) && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
+  if (p.forma === "esfera" && p.agujero >= p.diametro - 10) { $("#agujero").classList.add("bad"); ok = false; }
   return ok;
 }
 
@@ -157,11 +164,12 @@ function draw() {
   if (!current || !source.complete || !source.naturalWidth) return;
 
   const wrap = p.forma === "cilindro";
-  const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * p.marco));
+  const frame = SPHERE.includes(p.forma) ? 0 : p.marco;
+  const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * frame));
   const scale = Math.min(1, PREVIEW_MAX / Math.max(source.naturalWidth, source.naturalHeight));
   const w = Math.max(2, Math.round(source.naturalWidth * scale));
   const h = Math.max(2, Math.round(source.naturalHeight * scale));
-  const pad = Math.round((p.marco / inner) * w);
+  const pad = Math.round((frame / inner) * w);
   const padX = wrap ? 0 : pad;
 
   const cv = $("#cvLit");
@@ -211,6 +219,18 @@ function updateSummary(p, ok) {
   const fmt = (n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
 
   let size, onBed;
+  if (SPHERE.includes(p.forma)) {
+    const R = p.diametro / 2;
+    const top = Math.PI / 2 - p.resolucion / R;
+    const bottom = p.forma === "cupula" ? 0 : -Math.acos(Math.min(1, p.agujero / p.diametro));
+    const sRows = Math.round((R * (top - bottom)) / p.resolucion) + 1;
+    const sCols = Math.round((2 * Math.PI * R) / p.resolucion);
+    const high = R * (1 + Math.sin(-bottom));
+    const what = p.forma === "cupula" ? "cúpula" : `esfera con abertura de ${fmt(p.agujero)} mm`;
+    $("#summary").textContent = `${what} · Ø ${fmt(p.diametro)} × ${fmt(high)} mm de alto · unos ${fmt((4 * sRows * sCols) / 1e6)} millones de triángulos`;
+    if (p.diametro > BED.x || high > BED.z) $("#summary").textContent += " · no cabe en la Ender 3 V3 KE (220 × 220 × 240 mm)";
+    return;
+  }
   if (p.forma === "plana") {
     size = `${fmt(W)} × ${fmt(H)} × ${fmt(p.max)} mm`;
     onBed = W <= BED.x && H <= BED.z;
@@ -246,6 +266,7 @@ async function generate() {
       details: `${w} × ${h} × ${d} mm · ${tri} triángulos en el STL`,
       download: info.stl,
       radius: info.radio_mm,
+      sphere: SPHERE.includes(info.forma),
     });
   } catch (e) {
     toast(e.message, "err");

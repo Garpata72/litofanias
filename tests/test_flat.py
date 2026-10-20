@@ -60,3 +60,18 @@ def test_cylinder_geometry():
     r = np.hypot(s.verts[:, 0], s.verts[:, 1])
     assert np.isclose(r.max(), 63 / (2 * np.pi))       # perímetro exterior = ancho de la imagen
     assert np.isclose(r.min(), r.max() - 2.0)          # el relieve va por dentro
+
+
+def test_sphere_and_dome_are_watertight():
+    from litofania.shapes import build_sphere, signed_volume, sphere_lats
+
+    t = np.random.default_rng(2).uniform(0.8, 3.0, (20, 48))
+    for shape in ("esfera", "cupula"):
+        top, bottom = sphere_lats(30.0, shape, 20.0, 1.0)
+        s = build_sphere(t, 30.0, top, bottom)
+        _edges_are_manifold(s.faces)
+        assert signed_volume(s.verts, s.faces) > 0, shape
+        r = np.linalg.norm(s.verts, axis=1)
+        assert np.isclose(r.max(), 30.0)
+    top, bottom = sphere_lats(30.0, "esfera", 20.0, 1.0)
+    assert np.isclose(30.0 * np.cos(bottom), 10.0)   # abertura de 20 mm de diámetro
