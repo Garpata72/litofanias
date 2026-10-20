@@ -45,11 +45,12 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "puntas", "interior", "lados", "base_plana", "colgar", "colgar_ancho", "colgar_agujero", "collage", "collage_filas", "separacion", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relieve", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "puntas", "interior", "lados", "base_plana", "colgar", "colgar_ancho", "colgar_agujero", "collage", "collage_filas", "separacion", "diametro_arriba", "ondas", "onda_mm", "agujero_arriba", "cuello", "alto_grados", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relieve", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
   forma: "plana", contorno: "rectangulo", puntas: 5, interior: 50, lados: 6, base_plana: 0,
-  colgar: false, colgar_ancho: 14, colgar_agujero: 5, collage: false, collage_filas: 1, separacion: 2, ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relieve: "dentro", relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
+  colgar: false, colgar_ancho: 14, colgar_agujero: 5, collage: false, collage_filas: 1, separacion: 2,
+  diametro_arriba: 60, ondas: 0, onda_mm: 2, agujero_arriba: 0, cuello: 0, alto_grados: 0, ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relieve: "dentro", relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
   min: 0.8, max: 3, resolucion: 0.2, marco: 3,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
@@ -87,18 +88,29 @@ function showShapeFields() {
   });
   $$("[data-text]").forEach((el) => (el.hidden = !$("#texto").value.trim()));
   $$("[data-hang]").forEach((el) => (el.hidden = forma !== "plana" || !$("#colgar").checked));
+  $$("[data-waves]").forEach((el) => (el.hidden = !LAMP.includes(forma) || !Number($("#ondas").value)));
+  // Accesorios: el aro para casquillo no lleva altura, portapilas ni vela; la peana de escritorio, su inclinación.
+  const accTipo = LAMP.includes(forma) ? $("#acc_tipo").value : "base";
+  $$("[data-acc]").forEach((el) => { if (el.dataset.acc !== accTipo) el.hidden = true; });
+  $$("[data-desk]").forEach((el) => (el.hidden = forma !== "plana" || !$("#acc_escritorio").checked));
+  $$("[data-bat]").forEach((el) => { if (!$("#acc_pilas").checked) el.hidden = true; });
+  $("#diametroLabel").textContent = forma === "cono" ? "Diámetro de abajo" : "Diámetro exterior";
   $$("[data-collage]").forEach((el) => (el.hidden = !$("#collage").checked));
   updateAccessoryButton();
 }
 /* Ancho de la imagen ya colocada: el de la plana, la longitud del arco o el perímetro del cilindro. */
-const ROUND = ["cilindro", "esfera", "cupula"];
+const ROUND = ["cilindro", "cono", "esfera", "cupula"];
+const LAMP = ["cilindro", "cono"];   // dan la vuelta completa con la foto
+/* Diámetro mayor: en el cono, el más ancho de los dos marca el ancho desarrollado de la foto. */
+const widest = (p) => (p.forma === "cono" ? Math.max(p.diametro, p.diametro_arriba) : p.diametro);
 const SPHERE = ["esfera", "cupula"];
-const developed = (p) => (ROUND.includes(p.forma) ? Math.PI * p.diametro : p.ancho);
+const developed = (p) => (ROUND.includes(p.forma) ? Math.PI * widest(p) : p.ancho);
 
 function validParams(p) {
   let ok = true;
   for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "textura_mm", "texto_mm", "min", "max", "resolucion", "marco",
-    "puntas", "interior", "lados", "base_plana", "colgar_ancho", "colgar_agujero", "collage_filas", "separacion"]) {
+    "puntas", "interior", "lados", "base_plana", "colgar_ancho", "colgar_agujero", "collage_filas", "separacion",
+    "diametro_arriba", "ondas", "onda_mm", "agujero_arriba", "cuello", "alto_grados"]) {
     const el = $(`#${k}`);
     const bad = !el.closest("[hidden]") && !(p[k] >= Number(el.min) && p[k] <= Number(el.max));
     el.classList.toggle("bad", bad);
@@ -108,6 +120,11 @@ function validParams(p) {
   if (!ROUND.includes(p.forma) && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
   if (ROUND.includes(p.forma) && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
   if (p.forma === "esfera" && p.agujero >= p.diametro - 10) { $("#agujero").classList.add("bad"); ok = false; }
+  if (p.forma === "cono" && p.diametro_arriba <= 2 * p.max + 10) { $("#diametro_arriba").classList.add("bad"); ok = false; }
+  if (LAMP.includes(p.forma) && p.ondas && p.onda_mm * 4 >= Math.min(p.diametro, p.forma === "cono" ? p.diametro_arriba : p.diametro) / 2) {
+    $("#onda_mm").classList.add("bad"); ok = false;
+  }
+  if (SPHERE.includes(p.forma) && p.agujero_arriba && p.agujero_arriba >= p.diametro - 10) { $("#agujero_arriba").classList.add("bad"); ok = false; }
   if (p.forma === "plana" && p.colgar && p.colgar_agujero > p.colgar_ancho - 4) { $("#colgar_agujero").classList.add("bad"); ok = false; }
   if (needsMask(p) || needsTexture(p)) ok = false;
   if (collageOn(p) && !collageGeom(p).ok) { $("#separacion").classList.add("bad"); ok = false; }
@@ -333,7 +350,7 @@ function collageGeom(p) {
   const first = photoCanvas(collageIds[0]);
   const m0 = images.find((x) => x.id === collageIds[0]);
   const a0 = first ? first.width / first.height : m0 ? m0.ancho / m0.alto : 1;
-  const wrap = p.forma === "cilindro" || (SPHERE.includes(p.forma) && p.ajuste === "panoramica");
+  const wrap = LAMP.includes(p.forma) || (SPHERE.includes(p.forma) && p.ajuste === "panoramica");
   const cut = p.forma === "plana" && p.contorno !== "rectangulo";
   let W, H = null;
   if (SPHERE.includes(p.forma)) {
@@ -562,7 +579,7 @@ function draw() {
 
   const flat = p.forma === "plana";
   if (customMask(p) && !(maskImg.complete && maskImg.naturalWidth)) return;   // se redibuja al cargar
-  const wrap = p.forma === "cilindro";
+  const wrap = LAMP.includes(p.forma);
   const cut = flat && p.contorno !== "rectangulo";   // el marco sigue el contorno
   const border = SPHERE.includes(p.forma) || cut ? 0 : p.marco;
   const inner = Math.max(5, developed(p) - (wrap ? 0 : 2 * border));
@@ -865,7 +882,7 @@ function updateSummaryText(p, ok) {
   if (!ok) { $("#summary").textContent = needsMask(p) ? "Sube o elige una máscara para el contorno propio."
     : needsTexture(p) ? "Sube o elige una textura para el relleno." : "Revisa los valores marcados en rojo."; $("#btnStl").disabled = true; return; }
   $("#btnStl").disabled = false;
-  const wrap = p.forma === "cilindro";
+  const wrap = LAMP.includes(p.forma);
   const W = developed(p);
   const pad = Math.round(p.marco / p.resolucion);
   const cols = wrap ? Math.round(W / p.resolucion) : Math.max(2, Math.round((W - 2 * p.marco) / p.resolucion) + 1) + 2 * pad;
@@ -882,12 +899,15 @@ function updateSummaryText(p, ok) {
   let size, onBed;
   if (SPHERE.includes(p.forma)) {
     const R = p.diametro / 2;
-    const top = Math.PI / 2 - p.resolucion / R;
+    let top = Math.PI / 2 - p.resolucion / R;
+    if (p.agujero_arriba) top = Math.min(top, Math.acos(Math.min(1, p.agujero_arriba / p.diametro)));
     const bottom = p.forma === "cupula" ? 0 : -Math.acos(Math.min(1, p.agujero / p.diametro));
-    const sRows = Math.round((R * (top - bottom)) / p.resolucion) + 1;
+    const neck = p.forma === "esfera" ? p.cuello : 0;
+    const sRows = Math.round((R * (top - bottom)) / p.resolucion) + 1 + Math.ceil(neck / p.resolucion);
     const sCols = Math.round((2 * Math.PI * R) / p.resolucion);
-    const high = R * (1 + Math.sin(-bottom));
-    const what = p.forma === "cupula" ? "cúpula" : `esfera con abertura de ${fmt(p.agujero)} mm`;
+    const high = R * (Math.sin(top) + Math.sin(-bottom)) + neck;
+    const what = (p.forma === "cupula" ? "cúpula" : `esfera con abertura de ${fmt(p.agujero)} mm`)
+      + (neck ? ` y cuello de ${fmt(neck)} mm` : "") + (p.agujero_arriba ? ` · agujero arriba de ${fmt(p.agujero_arriba)} mm` : "");
     $("#summary").textContent = `${what} · Ø ${fmt(p.diametro)} × ${fmt(high)} mm de alto · unos ${fmt((4 * sRows * sCols) / 1e6)} millones de triángulos`;
     if (p.diametro > BED.x || high > BED.z) $("#summary").textContent += " · no cabe en la Ender 3 V3 KE (220 × 220 × 240 mm)";
     return;
@@ -901,9 +921,19 @@ function updateSummaryText(p, ok) {
     const chord = theta >= Math.PI ? 2 * R : 2 * R * Math.sin(theta / 2);
     size = `arco de ${fmt(p.angulo)}° · ${fmt(chord)} mm de ancho × ${fmt(H)} mm de alto`;
     onBed = chord <= BED.x && H <= BED.z;
+  } else if (p.forma === "cono") {
+    const dr = Math.abs(p.diametro - p.diametro_arriba) / 2;
+    if (H <= dr * 1.05) {
+      $("#summary").textContent = "La lámpara es demasiado baja para tanta diferencia de diámetros: usa una foto más alta o diámetros más parecidos.";
+      $("#btnStl").disabled = true;
+      return;
+    }
+    const high = Math.sqrt(H * H - dr * dr);
+    size = `lámpara cónica · Ø ${fmt(p.diametro)} abajo y Ø ${fmt(p.diametro_arriba)} arriba × ${fmt(high)} mm de alto`;
+    onBed = widest(p) + 2 * (p.ondas ? p.onda_mm : 0) <= BED.x && high <= BED.z;
   } else {
     size = `Ø ${fmt(p.diametro)} × ${fmt(H)} mm de alto`;
-    onBed = p.diametro <= BED.x && H <= BED.z;
+    onBed = p.diametro + 2 * (p.ondas ? p.onda_mm : 0) <= BED.x && H <= BED.z;
   }
   $("#summary").textContent = `${size} · unos ${fmt(tris / 1e6)} millones de triángulos`;
   if (!onBed) $("#summary").textContent += " · no cabe de pie en la Ender 3 V3 KE (220 × 220 × 240 mm)";
@@ -950,10 +980,11 @@ $("#btnPresetDel").addEventListener("click", async () => {
 
 /* ───────── Caja de luz y soportes (fase 8) ───────── */
 const ACC_LABEL = { plana: "Generar caja de luz", arco: "Generar base con luz", cilindro: "Generar base con luz",
-  cupula: "Generar base con luz", esfera: "Generar peana con luz" };
+  cono: "Generar base con luz", cupula: "Generar base con luz", esfera: "Generar peana con luz" };
 function updateAccessoryButton() {
   const forma = $("#forma").value;
-  $("#accLabel").textContent = ACC_LABEL[forma];
+  $("#accLabel").textContent = LAMP.includes(forma) && $("#acc_tipo").value === "casquillo" ? "Generar aro para casquillo"
+    : forma === "plana" && $("#acc_escritorio").checked ? "Generar caja y peana" : ACC_LABEL[forma];
   $("#btnAcc").disabled = !current;
   $("#btnAcc").title = "Se ajusta a la última litofanía generada con esta imagen y esta forma";
 }
@@ -965,13 +996,19 @@ async function generateAccessory() {
     const info = await (await api("POST", "/api/accesorios", {
       imagen_id: current.id, forma,
       fondo: Number($("#acc_fondo").value), alto: Number($("#acc_alto").value), holgura: Number($("#acc_holgura").value),
+      tipo: $("#acc_tipo").value, casquillo: Number($("#acc_casquillo").value),
+      escritorio: $("#acc_escritorio").checked, inclinacion: Number($("#acc_inclinacion").value),
+      pilas: $("#acc_pilas").checked, pilas_largo: Number($("#acc_pilas_largo").value),
+      pilas_ancho: Number($("#acc_pilas_ancho").value), pilas_alto: Number($("#acc_pilas_alto").value),
+      vela: $("#acc_vela").checked,
     })).json();
     const [w, h, d] = info.medidas_mm.map((n) => n.toLocaleString("es-ES", { maximumFractionDigits: 1 }));
     window.Visor.open({
       url: info.vista,
       name: `${info.nombre} · ${current.nombre}`,
-      details: `${w} × ${h} × ${d} mm · unos ${info.gramos} g de PLA`,
+      details: `${w} × ${h} × ${d} mm · unos ${info.gramos} g de PLA${info.piezas > 1 ? ` · ${info.piezas} piezas` : ""}`,
       download: info.stl,
+      download3mf: info.tresmf,
       settings: info.ajustes,
       mode: "relief",
     });
@@ -982,6 +1019,7 @@ async function generateAccessory() {
   }
 }
 $("#btnAcc").addEventListener("click", generateAccessory);
+for (const id of ["#acc_tipo", "#acc_escritorio", "#acc_pilas"]) $(id).addEventListener("input", showShapeFields);
 
 /* ───────── Generar STL y verlo en 3D ───────── */
 async function generate() {
@@ -1010,10 +1048,13 @@ async function generate() {
       name: current.nombre,
       details: `${w} × ${h} × ${d} mm · ${tri} triángulos · unos ${info.gramos} g de PLA`,
       download: info.stl,
+      download3mf: info.tresmf,
       settings: info.ajustes,
       radius: info.radio_mm,
       sphere: SPHERE.includes(info.forma),
-      rIn: info.relieve_fuera ? info.radio_mm - info.grosor_mm[1] : 0,
+      rIn: info.relieve_fuera ? info.radio_mm - (info.conico?.pared_mm ?? info.grosor_mm[1]) : 0,
+      lamp: info.conico,
+      tMax: info.grosor_mm[1],
     });
   } catch (e) {
     toast(e.message, "err");

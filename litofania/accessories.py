@@ -11,6 +11,10 @@ booleanas de manifold3d, así siempre son mallas cerradas.
   hacia arriba para la luz.
 - Esfera: peana con un collar que entra en la abertura de la esfera y el hueco de la luz dentro.
 - Arco: base en forma de sector con la ranura del arco y un hueco delante de la cara cóncava para la luz.
+- Cilindro y lámpara cónica: también un aro con radios para colgarlas de un casquillo E27 o E14.
+
+Las bases redondas y la peana pueden llevar un hueco para un portapilas (abierto por debajo) o un aro que
+centra una vela LED; la caja de luz puede ser de escritorio, con una peana aparte que la inclina hacia atrás.
 """
 from __future__ import annotations
 
@@ -27,6 +31,10 @@ GROOVE = 6.0        # profundidad de las ranuras de las bases
 CABLE = (9.0, 6.0)  # paso del cable USB: ancho × alto
 LED_MIN = 24.0      # diámetro mínimo del hueco de la luz (un LED USB pequeño cabe)
 SEGMENTS = 128
+BATTERY = (67.0, 48.0, 18.0)   # portapilas de 3 pilas AA con interruptor: largo × ancho × alto
+TEA_LIGHT = 39.0    # diámetro de una vela LED (tea light)
+SOCKETS = {"E27": 40.5, "E14": 29.0}   # diámetro del agujero del aro para el casquillo
+GAP = 10.0          # separación entre piezas de un mismo accesorio
 
 
 @dataclass
@@ -36,6 +44,7 @@ class Accessory:
     faces: np.ndarray
     size_mm: tuple[float, float, float]
     notes: list[str]
+    parts: list | None = None    # varias piezas: [(nombre, verts, faces)], ya colocadas una al lado de otra
 
 
 def _box(x0, y0, z0, x1, y1, z1) -> Manifold:
@@ -50,13 +59,61 @@ def _ring(r_in: float, r_out: float, z0: float, z1: float) -> Manifold:
     return _cyl(r_out, z0, z1) - _cyl(max(0.01, r_in), z0 - 1, z1 + 1)
 
 
-def _finish(name: str, solid: Manifold, notes: list[str]) -> Accessory:
+def _mesh(solid: Manifold) -> tuple[np.ndarray, np.ndarray]:
     mesh = solid.to_mesh()
     verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3]
-    faces = np.asarray(mesh.tri_verts, dtype=np.int64)
-    verts = verts - verts.min(axis=0)
-    size = tuple(float(v) for v in verts.max(axis=0))
-    return Accessory(name, verts, faces, size, notes)
+    return verts - verts.min(axis=0), np.asarray(mesh.tri_verts, dtype=np.int64)
+
+
+def _finish(name: str, solid: Manifold, notes: list[str], extra: list[tuple[str, Manifold]] = ()) -> Accessory:
+    """Pieza lista, apoyada en z = 0 desde el origen. Con `extra`, las demás piezas van a su derecha (en x)."""
+    verts, faces = _mesh(solid)
+    parts = [(name, verts, faces)]
+    x = verts[:, 0].max() + GAP
+    for label, m in extra:
+        v, f = _mesh(m)
+        v = v + (x, 0, 0)
+        x = v[:, 0].max() + GAP
+        parts.append((label, v, f))
+    all_v = np.vstack([p[1] for p in parts])
+    offsets = np.cumsum([0] + [len(p[1]) for p in parts[:-1]])
+    all_f = np.vstack([p[2] + o for p, o in zip(parts, offsets)])
+    size = tuple(float(v) for v in all_v.max(axis=0))
+    return Accessory(name, all_v, all_f, size, notes, parts if extra else None)
+
+
+def _wavy_disc(r: float, waves: int = 0, amp: float = 0.0) -> CrossSection:
+    """Círculo de radio `r` (con ondas como las de la pared de la lámpara), en el mismo sistema que
+    shapes: x = -r·sen a, y = r·cos a."""
+    if not waves or not amp:
+        return CrossSection.circle(r, SEGMENTS)
+    n = max(SEGMENTS, 24 * waves)
+    a = 2 * np.pi * np.arange(n) / n - np.pi
+    rr = r + amp * np.sin(waves * a)
+    return CrossSection([np.column_stack([-rr * np.sin(a), rr * np.cos(a)])], FillRule.EvenOdd)
+
+
+def _wavy_ring(r_in: float, r_out: float, z0: float, z1: float, waves: int = 0, amp: float = 0.0) -> Manifold:
+    return (_wavy_disc(r_out, waves, amp) - _wavy_disc(r_in, waves, amp)).extrude(z1 - z0).translate((0, 0, z0))
+
+
+def _battery_pocket(solid: Manifold, r_room: float, battery: tuple[float, float, float], z_led: float):
+    """Hueco del portapilas abierto por debajo, centrado, y paso del cable hasta el hueco de la luz."""
+    L, W, H = battery
+    if math.hypot(L / 2, W / 2) > r_room:
+        raise ValueError(f"El portapilas de {L:.0f} × {W:.0f} mm no cabe en esta base: agranda la pieza o usa uno más pequeño")
+    solid -= _box(-L / 2, -W / 2, -1, L / 2, W / 2, H)
+    return solid - _cyl(2.5, H - 1, z_led + 1)
+
+
+def _tea_light(solid: Manifold, r_led: float, z_floor: float, diameter: float) -> Manifold:
+    """Aro bajo en el suelo del hueco de la luz que deja la vela LED centrada."""
+    r = diameter / 2 + 0.5
+    if r_led < r:
+        raise ValueError(f"La vela LED de {diameter:.0f} mm no cabe en el hueco de la luz ({2 * r_led:.0f} mm)")
+    if r_led - r >= 1.0:
+        solid += _ring(r, r_led + 0.01, z_floor - 0.01, z_floor + 5)
+    return solid
 
 
 def outline_loops(mask: np.ndarray, mm_per_px: float) -> list[list[tuple[float, float]]]:
@@ -97,8 +154,12 @@ def outline_loops(mask: np.ndarray, mm_per_px: float) -> list[list[tuple[float, 
 
 
 def light_box(width: float, height: float, t_max: float, frame: float, depth: float = 30.0,
-              clearance: float = 0.4, outline: list | None = None) -> Accessory:
-    """Caja de luz para la plana, tumbada sobre la trasera: x = ancho, y = alto, z = fondo (delante arriba)."""
+              clearance: float = 0.4, outline: list | None = None, desk: bool = False,
+              tilt_deg: float = 10.0) -> Accessory:
+    """Caja de luz para la plana, tumbada sobre la trasera: x = ancho, y = alto, z = fondo (delante arriba).
+
+    Con `desk` va acompañada de una peana en la que encaja de pie, inclinada `tilt_deg` grados hacia atrás,
+    y el cable sale por la trasera por encima de la peana."""
     lip = max(2.5, frame)                        # el marco frontal tapa el marco de la litofanía
     wo = width + clearance + 2 * WALL
     ho = height + clearance + WALL               # por arriba la ranura queda abierta
@@ -116,57 +177,153 @@ def light_box(width: float, height: float, t_max: float, frame: float, depth: fl
         window = CrossSection.square((width - 2 * lip, height - 2 * lip)).translate((ox + lip, oy + lip))
     box -= window.extrude(LIP + 2).translate((0, 0, do - LIP - 1))
     cw, ch = CABLE
-    box -= _box(wo / 2 - cw / 2, WALL + 3, -1, wo / 2 + cw / 2, WALL + 3 + ch, WALL + 1)   # cable por la trasera
+    cable_y = WALL + (22 if desk else 3)                       # en la de escritorio, por encima de la peana
+    box -= _box(wo / 2 - cw / 2, cable_y, -1, wo / 2 + cw / 2, cable_y + ch, WALL + 1)   # cable por la trasera
     notes = [
         "Caja de luz para la litofanía plana. Imprímela tal como sale: tumbada sobre la trasera, sin soportes.",
         f"La litofanía entra por la ranura de arriba (holgura {clearance:.1f} mm).",
         f"Cámara de luz de {depth:.0f} mm de fondo: pega una tira LED USB de 5 V (blanco cálido) en la trasera,",
-        "por dentro, y saca el cable por el agujero de abajo.",
+        "por dentro, y saca el cable por el agujero de atrás.",
     ]
-    return _finish("caja", box, notes)
+    if not desk:
+        return _finish("caja", box, notes)
+    notes += [
+        f"Peana de escritorio (la segunda pieza): la caja encaja de pie en su hueco, inclinada {tilt_deg:.0f}° hacia atrás.",
+        "Imprime la peana apoyada en su base, sin soportes.",
+    ]
+    return _finish("caja", box, notes, [("peana", desk_stand(wo, do, clearance, tilt_deg))])
+
+
+def desk_stand(box_w: float, box_d: float, clearance: float = 0.4, tilt_deg: float = 10.0) -> Manifold:
+    """Peana para la caja de luz de pie: un bloque con un hueco del tamaño de la base de la caja, inclinado
+    hacia atrás (+y) `tilt_deg` grados. La caja entra al menos 8 mm por delante y más por detrás."""
+    a = math.radians(tilt_deg)
+    w, d = box_w + clearance, box_d + clearance
+    rise = d / 2 * math.sin(a)
+    depth = 8.0 + rise                         # hondura en el centro del hueco
+    wp, dp = w + 2 * 8.0, d + 2 * 20.0
+    hp = FLOOR + depth + rise
+    stand = _box(0, 0, 0, wp, dp, hp)
+    pocket = _box(-w / 2, -d / 2, 0, w / 2, d / 2, 60).rotate((-tilt_deg, 0, 0))   # se inclina hacia +y
+    stand -= pocket.translate((wp / 2, dp / 2, hp - depth))
+    cw, ch = CABLE
+    stand -= _box(wp / 2 - cw / 2, dp / 2, hp - 4, wp / 2 + cw / 2, dp + 1, hp + 1)   # muesca para el cable
+    return stand
 
 
 def round_base(radius: float, t_max: float, height: float = 25.0, clearance: float = 0.4,
-               kind: str = "cilindro") -> Accessory:
-    """Base redonda para el cilindro o la cúpula: ranura circular para la pared y hueco central para la luz."""
+               kind: str = "cilindro", waves: int = 0, wave_mm: float = 0.0,
+               battery: tuple[float, float, float] | None = None, tea_light: float | None = None) -> Accessory:
+    """Base redonda para el cilindro, la lámpara cónica o la cúpula: ranura para la pared (con sus ondas,
+    si las tiene) y hueco central para la luz. `t_max` es el grosor horizontal de la pared.
+
+    `battery` (largo, ancho, alto) añade un hueco abierto por debajo para un portapilas, y la base crece lo
+    necesario; `tea_light` (diámetro) pone en el suelo del hueco un aro que centra una vela LED."""
+    if battery:
+        height = max(height, battery[2] + FLOOR + GROOVE + 4)
+    floor = battery[2] + FLOOR if battery else FLOOR
     r_groove_out = radius + clearance / 2
     r_groove_in = radius - t_max - clearance / 2
-    r_out = r_groove_out + WALL
-    r_led = max(r_groove_in - WALL, 3.0)
+    r_out = r_groove_out + WALL + wave_mm
+    r_led = max(r_groove_in - WALL - wave_mm, 3.0)
     base = _cyl(r_out, 0, height)
-    base -= _ring(r_groove_in, r_groove_out, height - GROOVE, height + 1)
-    base -= _cyl(r_led, FLOOR, height + 1)
+    base -= _wavy_ring(r_groove_in, r_groove_out, height - GROOVE, height + 1, waves, wave_mm)
+    base -= _cyl(r_led, floor, height + 1)
     cw, ch = CABLE
     base -= _box(0, -cw / 2, -1, r_out + 1, cw / 2, ch)                 # canal del cable por debajo
-    base -= _cyl(min(r_led, cw / 2 + 1), -1, FLOOR + 1)                  # y paso al hueco de la luz
-    what = "el cilindro" if kind == "cilindro" else "la cúpula"
+    base -= _cyl(min(r_led, cw / 2 + 1), -1, floor + 1)                  # y paso al hueco de la luz
+    if battery:
+        base = _battery_pocket(base, r_out - WALL, battery, floor)
+    if tea_light:
+        base = _tea_light(base, r_led, floor, tea_light)
+    what = {"cilindro": "el cilindro", "cono": "la lámpara cónica"}.get(kind, "la cúpula")
     notes = [
         f"Base para {what}: imprímela tal como sale, sin soportes.",
-        f"La pieza encaja en la ranura circular de arriba ({GROOVE:.0f} mm de profundidad, holgura {clearance:.1f} mm).",
+        f"La pieza encaja en la ranura de arriba ({GROOVE:.0f} mm de profundidad, holgura {clearance:.1f} mm).",
         f"Hueco central de {2 * r_led:.0f} mm para la luz LED USB de 5 V; el cable sale por el canal de abajo.",
     ]
-    if 2 * r_led < LED_MIN:
-        notes.append("El hueco es pequeño para un LED USB: usa uno de tipo tira o aumenta el diámetro.")
+    notes += _light_notes(r_led, battery, tea_light)
     return _finish("base", base, notes)
 
 
-def sphere_stand(hole: float, height: float = 25.0, clearance: float = 0.4) -> Accessory:
-    """Peana para la esfera: la abertura apoya en la cara de arriba y un collar la centra."""
-    r_collar_out = hole / 2 - clearance / 2
-    r_collar_in = max(r_collar_out - WALL, 3.0)
-    r_out = hole / 2 + 8.0
-    stand = _cyl(r_out, 0, height) + _ring(r_collar_in, r_collar_out, height - 0.01, height + 5)
-    stand -= _cyl(r_collar_in, FLOOR, height + 6)
+def _light_notes(r_led: float, battery, tea_light) -> list[str]:
+    notes = []
+    if battery:
+        notes.append(f"Por debajo, hueco de {battery[0]:.0f} × {battery[1]:.0f} × {battery[2]:.0f} mm para el portapilas; "
+                     "su cable sube por el agujero central hasta la luz.")
+    if tea_light:
+        notes.append(f"En el suelo del hueco, un aro centra una vela LED de {tea_light:.0f} mm.")
+    elif 2 * r_led < LED_MIN:
+        notes.append("El hueco es pequeño para un LED USB: usa uno de tipo tira o aumenta el diámetro.")
+    return notes
+
+
+def socket_ring(radius: float, t_max: float, socket_mm: float = 40.5, clearance: float = 0.4,
+                waves: int = 0, wave_mm: float = 0.0, spokes: int = 3) -> Accessory:
+    """Aro para colgar el cilindro o la lámpara cónica de un casquillo: un borde con ranura que encaja en el
+    canto de la pared, unido con radios a un anillo del diámetro del casquillo (E27, E14…).
+
+    Sale con la ranura hacia abajo, abierta a la cama, y se imprime sin soportes (el techo de la ranura
+    es un puente corto). `radius` es el radio exterior del canto donde va y `t_max` el grosor de la pared."""
+    r_g_out = radius + clearance / 2
+    r_g_in = radius - t_max - clearance / 2
+    r_rim_in, r_rim_out = r_g_in - WALL, r_g_out + WALL
+    r_hub_in = socket_mm / 2
+    r_hub_out = r_hub_in + 4.0
+    if r_hub_out + 6 > r_rim_in - wave_mm:
+        raise ValueError(f"La lámpara es demasiado estrecha para un aro de casquillo de {socket_mm:.0f} mm")
+    top = GROOVE + 2.4
+    ring = _wavy_ring(r_rim_in, r_rim_out, 0, top, waves, wave_mm)
+    ring -= _wavy_ring(r_g_in, r_g_out, -1, GROOVE, waves, wave_mm)
+    ring += _ring(r_hub_in, r_hub_out, 0, 5.0)
+    length = r_rim_in - wave_mm - r_hub_out + 2
+    for k in range(spokes):
+        bar = _box(r_hub_out - 1, -3.0, 0, r_hub_out - 1 + length, 3.0, 4.0)
+        ring += bar.rotate((0, 0, 90 + 360 * k / spokes))
+    notes = [
+        "Aro para el casquillo: imprímelo tal como sale, con la ranura hacia la cama y sin soportes.",
+        f"La ranura ({GROOVE:.0f} mm de profundidad, holgura {clearance:.1f} mm) encaja en el canto de la lámpara.",
+        f"El anillo central tiene {socket_mm:.1f} mm de agujero: pasa por él la rosca del casquillo y apriétalo con su arandela.",
+        "Usa una bombilla LED (se calienta poco): las de filamento o halógenas pueden deformar el PLA.",
+    ]
+    return _finish("aro", ring, notes)
+
+
+def sphere_stand(hole: float, height: float = 25.0, clearance: float = 0.4, neck_t: float = 0.0,
+                 battery: tuple[float, float, float] | None = None, tea_light: float | None = None) -> Accessory:
+    """Peana para la esfera: la abertura apoya en la cara de arriba y un collar la centra. Si la esfera
+    lleva cuello (`neck_t` = su grosor), el cuello entra en una ranura circular de la peana.
+
+    `battery` y `tea_light` como en round_base."""
+    if battery:
+        height = max(height, battery[2] + FLOOR + GROOVE + 4)
+    floor = battery[2] + FLOOR if battery else FLOOR
+    r_out = hole / 2 + 8.0 + (WALL if neck_t else 0)
+    if neck_t:   # ranura para el cuello: su cara exterior es la de la abertura
+        r_g_out, r_g_in = hole / 2 + clearance / 2, hole / 2 - neck_t - clearance / 2
+        r_led = max(r_g_in - WALL, 3.0)
+        stand = _cyl(r_out, 0, height) - _ring(r_g_in, r_g_out, height - GROOVE, height + 1)
+        stand -= _cyl(r_led, floor, height + 1)
+        fit = f"El cuello de la esfera entra en la ranura de arriba ({GROOVE:.0f} mm, holgura {clearance:.1f} mm)."
+    else:
+        r_collar_out = hole / 2 - clearance / 2
+        r_led = max(r_collar_out - WALL, 3.0)
+        stand = _cyl(r_out, 0, height) + _ring(r_led, r_collar_out, height - 0.01, height + 5)
+        stand -= _cyl(r_led, floor, height + 6)
+        fit = f"La abertura de la esfera ({hole:.0f} mm) apoya arriba y el collar de 5 mm la centra."
     cw, ch = CABLE
     stand -= _box(0, -cw / 2, -1, r_out + 1, cw / 2, ch)
-    stand -= _cyl(min(r_collar_in, cw / 2 + 1), -1, FLOOR + 1)
+    stand -= _cyl(min(r_led, cw / 2 + 1), -1, floor + 1)
+    if battery:
+        stand = _battery_pocket(stand, r_out - WALL, battery, floor)
+    if tea_light:
+        stand = _tea_light(stand, r_led, floor, tea_light)
     notes = [
         "Peana para la esfera: imprímela tal como sale, sin soportes.",
-        f"La abertura de la esfera ({hole:.0f} mm) apoya arriba y el collar de 5 mm la centra.",
-        f"Hueco de {2 * r_collar_in:.0f} mm para la luz LED USB de 5 V; el cable sale por el canal de abajo.",
+        fit,
+        f"Hueco de {2 * r_led:.0f} mm para la luz LED USB de 5 V; el cable sale por el canal de abajo.",
     ]
-    if 2 * r_collar_in < LED_MIN:
-        notes.append("El hueco es pequeño para un LED USB: agranda la abertura de la esfera si puedes.")
+    notes += _light_notes(r_led, battery, tea_light)
     return _finish("peana", stand, notes)
 
 

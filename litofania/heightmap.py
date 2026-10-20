@@ -130,7 +130,7 @@ def load_gray(path: str, p: FlatParams, wrap: bool = False, aspect: float | None
 
 def sphere_gray(path: str, p: FlatParams, cols: int, rows: int, lat_top: float, lat_bottom: float,
                 fit: str = "centrada", coverage_deg: float = 150.0, fill="liso", photos=None,
-                sep_mm: float = 2.0) -> np.ndarray:
+                sep_mm: float = 2.0, height_deg: float = 0.0) -> np.ndarray:
     """Rejilla de grises (rows × cols) que cubre la esfera: longitudes completas, latitudes de arriba abajo.
 
     «panoramica» estira la imagen a toda la esfera (ideal para fotos 2:1). «centrada» coloca la foto
@@ -139,6 +139,9 @@ def sphere_gray(path: str, p: FlatParams, cols: int, rows: int, lat_top: float, 
 
     Con varias fotos (`photos`, ver collage.py) van una al lado de otra: en «centrada» se reparten los
     `coverage_deg` grados con la proporción de la primera; en «panoramica» dan la vuelta entera, a todo el alto.
+
+    `height_deg` (en «centrada») fija también el alto de la foto en grados de latitud: la foto se recorta
+    lo justo para llenar ese hueco sin deformarse. Con 0 el alto sale de la proporción de la foto.
     """
     from litofania.textures import sphere_fill
 
@@ -158,7 +161,10 @@ def sphere_gray(path: str, p: FlatParams, cols: int, rows: int, lat_top: float, 
             _, slots = layout(len(photos), cols, 1, sep, True, rows=rows)
             return paint(background, photos, p, slots, True)
         w = max(2, min(cols, round(cols * coverage_deg / 360)))
-        h, slots = layout(len(photos), w, 1, sep, False, first_aspect(photos, p))
+        if height_deg > 0:
+            h, slots = layout(len(photos), w, 1, sep, False, rows=_deg_rows(height_deg, rows, lat_top, lat_bottom))
+        else:
+            h, slots = layout(len(photos), w, 1, sep, False, first_aspect(photos, p))
         if h > rows:
             h, slots = layout(len(photos), w, 1, sep, False, rows=rows)
         r0 = _sphere_row(rows, h, lat_top, lat_bottom)
@@ -169,11 +175,23 @@ def sphere_gray(path: str, p: FlatParams, cols: int, rows: int, lat_top: float, 
     img = _adjusted(path, p)
 
     w = max(2, min(cols, round(cols * coverage_deg / 360)))
+    c0 = (cols - w) // 2
+    if height_deg > 0:   # hueco fijo en grados: la foto lo llena recortando lo que sobra
+        h = _deg_rows(height_deg, rows, lat_top, lat_bottom)
+        r0 = _sphere_row(rows, h, lat_top, lat_bottom)
+        x, y, ww, _ = crop_window(img.width, img.height, w / h)
+        background[r0:r0 + h, c0:c0 + w] = place_photo(img, p, w, h, x, y, ww, background[r0:r0 + h, c0:c0 + w])
+        return background
     h = max(2, min(rows, round(w * img.height / img.width)))
     r0 = _sphere_row(rows, h, lat_top, lat_bottom)
-    c0 = (cols - w) // 2
     k = img.width / w                                     # píxeles de foto por celda
     return place_photo(img, p, cols, rows, -c0 * k, -r0 * k, cols * k, background)
+
+
+def _deg_rows(height_deg: float, rows: int, lat_top: float, lat_bottom: float) -> int:
+    """Filas que ocupan `height_deg` grados de latitud (como mucho, todas)."""
+    per_row = (lat_top - lat_bottom) / (rows - 1)
+    return int(max(2, min(rows, round(np.radians(height_deg) / per_row))))
 
 
 def _sphere_row(rows: int, h: int, lat_top: float, lat_bottom: float) -> int:
