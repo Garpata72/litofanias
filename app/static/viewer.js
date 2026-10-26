@@ -31,6 +31,7 @@ const litMat = new THREE.ShaderMaterial({
   uniforms: {
     zBack: { value: 0 }, tMin: { value: 0.8 }, absorb: { value: ABSORB },
     radial: { value: 0 }, rOut: { value: 0 }, outside: { value: 0 }, rIn: { value: 0 },
+    slope: { value: 0 }, waveN: { value: 0 }, waveAmp: { value: 0 }, tMax: { value: 3 },
   },
   vertexShader: `
     varying vec3 vPos; varying vec3 vNormal; varying vec3 vLocal; varying vec3 vLocalN;
@@ -44,7 +45,7 @@ const litMat = new THREE.ShaderMaterial({
     }`,
   fragmentShader: `
     uniform float zBack; uniform float tMin; uniform float absorb; uniform float radial; uniform float rOut;
-    uniform float outside; uniform float rIn;
+    uniform float outside; uniform float rIn; uniform float slope; uniform float waveN; uniform float waveAmp; uniform float tMax;
     varying vec3 vPos; varying vec3 vNormal; varying vec3 vLocal; varying vec3 vLocalN;
     void main() {
       vec3 warm = vec3(1.0, 0.87, 0.66);
@@ -59,7 +60,10 @@ const litMat = new THREE.ShaderMaterial({
         if (outside > 0.5) facing = -facing;
         if (facing < -0.3) discard;
         if (facing < 0.3) { gl_FragColor = vec4(warm * 0.06, 1.0); return; }
-        float tr = outside > 0.5 ? dist - rIn : rOut - dist;
+        // Lámpara cónica y ondas: los radios cambian con la altura (slope) y la vuelta (a = atan(-x, y)).
+        float shift = radial > 1.5 ? 0.0 : slope * vLocal.z + waveAmp * sin(waveN * atan(-vLocal.x, vLocal.y));
+        float tr = outside > 0.5 ? dist - (rIn + shift) : rOut + shift - dist;
+        if (radial > 1.5 && dist > rOut + 0.05) tr = tMax;   // cuello de la esfera: grosor máximo
         gl_FragColor = vec4(warm * clamp(exp(-absorb * (tr - tMin)), 0.0, 1.0), 1.0);
         return;
       }
@@ -120,7 +124,8 @@ function clear() {
 }
 
 /* Centra la pieza, deja la cara trasera en su sitio y calcula el grosor mínimo de la cara iluminada. */
-function place(obj, radius, sphere, rIn) {
+function place(obj, radius, sphere, rIn, lamp, tMax) {
+  const shift = (p) => (lamp ? lamp.pendiente * p.z + lamp.onda_mm * Math.sin(lamp.ondas * Math.atan2(-p.x, p.y)) : 0);
   if (radius) {
     // Las curvas se generan de pie con la altura en z y la cara convexa hacia +y: se giran para
     // tener la altura hacia arriba y la cara convexa mirando a la cámara.
@@ -153,9 +158,10 @@ function place(obj, radius, sphere, rIn) {
         n.fromBufferAttribute(nor, i);
         p.fromBufferAttribute(pos, i);
         const r = sphere ? p.length() : Math.hypot(p.x, p.y);
+        if (sphere && r > radius + 0.05) continue;   // el cuello de la esfera queda fuera de la esfera: no cuenta
         const inward = sphere ? -n.dot(p) / r : (-n.x * p.x - n.y * p.y) / r;
-        if (rIn && inward < -0.5) tMin = Math.min(tMin, r - rIn);
-        else if (!rIn && inward > 0.5) tMin = Math.min(tMin, radius - r);
+        if (rIn && inward < -0.5) tMin = Math.min(tMin, r - rIn - shift(p));
+        else if (!rIn && inward > 0.5) tMin = Math.min(tMin, radius + shift(p) - r);
         continue;
       }
       n.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
@@ -168,6 +174,10 @@ function place(obj, radius, sphere, rIn) {
   litMat.uniforms.rOut.value = radius || 0;
   litMat.uniforms.outside.value = rIn ? 1 : 0;
   litMat.uniforms.rIn.value = rIn || 0;
+  litMat.uniforms.tMax.value = tMax || 3;
+  litMat.uniforms.slope.value = lamp?.pendiente || 0;
+  litMat.uniforms.waveN.value = lamp?.ondas || 0;
+  litMat.uniforms.waveAmp.value = lamp?.onda_mm || 0;
   litMat.uniforms.zBack.value = zBack;
   litMat.uniforms.tMin.value = Number.isFinite(tMin) ? tMin : 0.8;
   return { size: b.getSize(new THREE.Vector3()), triangles };
@@ -188,6 +198,9 @@ async function open(opts) {
   const dl = $("#lbDownload");
   dl.hidden = !opts.download;
   if (opts.download) dl.href = opts.download;
+  const mf = $("#lbDownload3mf");
+  mf.hidden = !opts.download3mf;
+  if (opts.download3mf) mf.href = opts.download3mf;
   const st = $("#lbSettings");
   st.hidden = !opts.settings;
   if (opts.settings) st.href = opts.settings;
@@ -201,7 +214,7 @@ async function open(opts) {
     if (current !== opts) return;   // se abrió otro mientras cargaba
     root = obj;
     scene.add(root);
-    const { size, triangles } = place(root, opts.radius, opts.sphere, opts.rIn);
+    const { size, triangles } = place(root, opts.radius, opts.sphere, opts.rIn, opts.lamp, opts.tMax);
     if (!opts.details) {
       const f = (v) => v.toLocaleString("es-ES", { maximumFractionDigits: 1 });
       $("#lbInfo").textContent = `${f(size.x)} × ${f(size.y)} × ${f(size.z)} mm · ${Math.round(triangles).toLocaleString("es-ES")} triángulos`;

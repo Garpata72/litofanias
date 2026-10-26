@@ -222,3 +222,52 @@ def test_collage(client):
     assert gone.status_code == 404
     tight = client.post("/api/litofanias", json={**base, "ancho": 30, "marco": 2, "separacion": 12})
     assert tight.status_code == 422
+
+
+def test_cone_waves_and_sphere_options(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(60, 60), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "resolucion": 0.8}
+    for extra in ({"forma": "cono", "diametro": 70, "diametro_arriba": 50},
+                  {"forma": "cono", "diametro": 50, "diametro_arriba": 70, "ondas": 8, "onda_mm": 2, "relieve": "fuera"},
+                  {"forma": "cilindro", "diametro": 60, "ondas": 6, "onda_mm": 2},
+                  {"forma": "esfera", "diametro": 60, "agujero": 30, "alto_grados": 60, "cobertura": 120,
+                   "agujero_arriba": 15, "cuello": 8},
+                  {"forma": "cupula", "diametro": 60, "agujero_arriba": 20, "relieve": "fuera"}):
+        r = client.post("/api/litofanias", json={**base, **extra})
+        assert r.status_code == 200, (extra, r.text)
+        assert _closed(client.get(r.json()["stl"]).content), extra
+    cone = client.post("/api/litofanias", json={**base, "forma": "cono", "diametro": 70, "diametro_arriba": 50}).json()
+    assert abs(cone["medidas_mm"][0] - 70) < 1 and cone["conico"]["pendiente"] < 0
+    wide = client.post("/api/imagenes", files={"archivo": ("ancha.png", _png(400, 40), "image/png")}).json()
+    flat = client.post("/api/litofanias", json={**base, "imagen_id": wide["id"], "forma": "cono", "diametro": 200,
+                                                "diametro_arriba": 40})
+    assert flat.status_code == 422          # demasiado bajo para tanta diferencia de diámetros
+
+
+def test_new_accessories_and_3mf(client):
+    import zipfile
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(80, 60), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "resolucion": 0.8}
+    acc = lambda forma, **kw: client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": forma, **kw})
+
+    lito = client.post("/api/litofanias", json={**base, "ancho": 60}).json()
+    desk = acc("plana", escritorio=True, inclinacion=12).json()
+    assert desk["piezas"] == 2 and _closed(client.get(desk["stl"]).content)
+    z = zipfile.ZipFile(io.BytesIO(client.get(lito["tresmf"]).content))
+    model = z.read("3D/3dmodel.model").decode()
+    assert model.count("<object ") == 3 and "peana" in model    # litofanía, caja y peana
+    assert zipfile.ZipFile(io.BytesIO(client.get(desk["tresmf"]).content)).read("3D/3dmodel.model").decode().count("<object ") == 2
+
+    client.post("/api/litofanias", json={**base, "forma": "cono", "diametro": 90, "diametro_arriba": 70, "ondas": 6})
+    for kw in ({}, {"pilas": True}, {"vela": True}, {"tipo": "casquillo", "casquillo": 29}):
+        r = acc("cono", **kw)
+        assert r.status_code == 200, (kw, r.text)
+        assert _closed(client.get(r.json()["stl"]).content), kw
+    assert acc("cono", tipo="casquillo", casquillo=29).json()["nombre"] == "Aro para el casquillo"
+    assert acc("cono", tipo="casquillo", casquillo=50).status_code == 422   # el casquillo no cabe arriba
+
+    client.post("/api/litofanias", json={**base, "forma": "esfera", "diametro": 90, "agujero": 60, "cuello": 8})
+    r = acc("esfera", vela=True)
+    assert r.status_code == 200 and _closed(client.get(r.json()["stl"]).content)
+    client.post("/api/litofanias", json={**base, "forma": "cilindro", "diametro": 40})
+    assert acc("cilindro", pilas=True).status_code == 422          # el portapilas no cabe
