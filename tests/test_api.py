@@ -273,3 +273,39 @@ def test_new_accessories_and_3mf(client):
     assert r.status_code == 200 and _closed(client.get(r.json()["stl"]).content)
     client.post("/api/litofanias", json={**base, "forma": "cilindro", "diametro": 40})
     assert acc("cilindro", pilas=True).status_code == 422          # el portapilas no cabe
+
+
+def test_prism_box_and_overhang(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(80, 60), "image/png")}).json()
+    other = client.post("/api/imagenes", files={"archivo": ("otra.png", _png(60, 80), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "resolucion": 0.8, "forma": "cilindro", "caras": 4, "ancho": 60, "separacion": 4}
+    r = client.post("/api/litofanias", json=base)
+    assert r.status_code == 200, r.text            # sin collage, la misma foto en las 4 caras
+    info = r.json()
+    assert info["caras"] == 4 and _closed(client.get(info["stl"]).content)
+    assert abs(info["medidas_mm"][0] - 60) < 2   # cara de 60 mm
+    photos = [{"imagen_id": i} for i in (meta["id"], other["id"], meta["id"], other["id"])]
+    for caras, fuera in ((4, False), (4, True), (3, False)):
+        r = client.post("/api/litofanias", json={**base, "caras": caras, "relieve": "fuera" if fuera else "dentro",
+                                                  "collage": photos[:caras]})
+        assert r.status_code == 200, (caras, r.text)
+        assert _closed(client.get(r.json()["stl"]).content), (caras, fuera)
+    assert client.post("/api/litofanias", json={**base, "collage": photos[:3]}).status_code == 422   # faltan fotos
+    assert client.post("/api/litofanias", json={**base, "caras": 2}).status_code == 422
+
+    flat = {"imagen_id": meta["id"], "resolucion": 0.8, "ancho": 60}
+    plain = client.post("/api/litofanias", json=flat).json()
+    ramp = client.post("/api/litofanias", json={**flat, "voladizo": 45}).json()
+    assert _closed(client.get(ramp["stl"]).content) and ramp["gramos"] <= plain["gramos"]
+
+
+def test_prism_base(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(80, 60), "image/png")}).json()
+    client.post("/api/litofanias", json={"imagen_id": meta["id"], "resolucion": 0.8, "forma": "cilindro",
+                                         "caras": 5, "ancho": 50})
+    for kw in ({}, {"vela": True}):
+        r = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "cilindro", **kw})
+        assert r.status_code == 200, r.text
+        assert _closed(client.get(r.json()["stl"]).content)
+    r = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "cilindro", "tipo": "casquillo"})
+    assert r.status_code == 422

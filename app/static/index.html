@@ -98,10 +98,11 @@
       <label class="slider" data-shapes="plana"><span>Zoom de la foto</span><output data-for="zoom"></output>
         <input id="zoom" type="range" min="0.25" max="4" step="0.05" value="1"></label>
       <p class="hint" data-shapes="plana">Arrastra la foto en la vista «Encuadre» para colocarla y usa la rueda para acercarla o alejarla; doble clic la centra. Con zoom menor que 1 la foto queda más pequeña que la pieza.</p>
-      <label class="num" data-shapes="plana arco"><span>Ancho total</span><input id="ancho" type="number" min="20" max="400" step="1" value="150"><i>mm</i></label>
+      <label class="num" data-shapes="plana arco cilindro"><span id="anchoLabel">Ancho total</span><input id="ancho" type="number" min="20" max="400" step="1" value="150"><i>mm</i></label>
       <label class="num" data-shapes="arco"><span>Ángulo del arco</span><input id="angulo" type="number" min="30" max="300" step="5" value="120"><i>grados</i></label>
       <label class="num" data-shapes="cilindro cono esfera cupula"><span id="diametroLabel">Diámetro exterior</span><input id="diametro" type="number" min="30" max="210" step="1" value="80"><i>mm</i></label>
       <label class="num" data-shapes="cono"><span>Diámetro de arriba</span><input id="diametro_arriba" type="number" min="30" max="210" step="1" value="60"><i>mm</i></label>
+      <label class="num" data-shapes="cilindro" title="Caja de 3 a 8 caras planas con una foto en cada cara (usa el collage con una foto por cara; con una sola se repite). 0 deja el cilindro redondo"><span>Caras (caja)</span><input id="caras" type="number" min="0" max="8" step="1" value="0"><i></i></label>
       <label class="num" data-shapes="cilindro cono" title="Ondas a lo largo de la vuelta; 0 deja la pared lisa"><span>Ondas</span><input id="ondas" type="number" min="0" max="24" step="1" value="0"><i></i></label>
       <label class="num" data-shapes="cilindro cono" data-waves><span>Tamaño de las ondas</span><input id="onda_mm" type="number" min="0.5" max="10" step="0.5" value="2"><i>mm</i></label>
       <label class="num" data-shapes="esfera"><span>Abertura para la luz</span><input id="agujero" type="number" min="10" max="200" step="1" value="40"><i>mm</i></label>
@@ -143,6 +144,8 @@
       <label class="num"><span>Grosor máximo</span><input id="max" type="number" min="1" max="8" step="0.1" value="3"><i>mm</i></label>
       <label class="num"><span>Resolución</span><input id="resolucion" type="number" min="0.05" max="1" step="0.05" value="0.2"><i>mm/px</i></label>
       <label class="num" data-shapes="plana arco cilindro cono"><span>Marco</span><input id="marco" type="number" min="0" max="20" step="0.5" value="3"><i>mm</i></label>
+      <label class="num" data-shapes="plana arco cilindro cono"><span>Voladizo máximo</span><input id="voladizo" type="number" min="0" max="80" step="5" value="0"><i>grados</i></label>
+      <p class="hint" data-shapes="plana arco cilindro cono">0 = sin límite. Con 45° o 50° el relieve y el paso al marco salen en rampa y se imprimen de pie sin hilos ni soportes, a costa de algo de contraste.</p>
       <p class="hint">Valores pensados para una Ender 3 V3 KE con boquilla de 0,4 mm.</p>
     </div>
 

@@ -22,6 +22,7 @@ class Lamp:
     r_top: float | None = None
     waves: int = 0
     wave_mm: float = 0.0
+    sides: int = 0          # cilindro: prisma de `sides` caras planas en vez de pared redonda (0 = redondo)
 
 
 @dataclass
@@ -38,6 +39,35 @@ def cone_height(rows: int, mm_per_px: float, r_bottom: float, r_top: float) -> f
     if slant <= dr * 1.05:
         raise ValueError("La lámpara es demasiado baja para tanta diferencia de diámetros: usa una foto más alta o diámetros más parecidos")
     return float(np.sqrt(slant**2 - dr**2))
+
+
+def prism_apothem(radius: float, sides: int) -> float:
+    """Distancia del eje al centro de cada cara de un prisma de radio exterior `radius` (el de las esquinas)."""
+    return radius * float(np.cos(np.pi / sides))
+
+
+def _prism_wall(off: np.ndarray, z: np.ndarray, mm_per_px: float, sides: int) -> tuple[np.ndarray, float]:
+    """Pared de un prisma de `sides` caras iguales, con la cara 0 delante (+y) y la costura detrás.
+
+    La malla da una vuelta completa de `cols` columnas, repartidas por igual a lo largo del perímetro, así que
+    la foto no se deforma. `off` (rows, cols) es lo que se mete cada punto hacia dentro, medido en
+    perpendicular a su cara; en las esquinas el punto se recorta al ingletado de la cara contigua, para que
+    las superficies interiores no se crucen. Devuelve los puntos (rows, cols, 3) y el radio de las esquinas."""
+    rows, cols = off.shape
+    perimeter = cols * mm_per_px
+    face = perimeter / sides
+    apothem = face / (2 * np.tan(np.pi / sides))
+    s = (np.arange(cols) - cols / 2) * mm_per_px                 # recorrido desde el centro de la cara 0
+    f = np.floor((s + face / 2) / face)
+    u = (s - f * face)[None, :]
+    ang = (2 * np.pi * f / sides)[None, :]
+    half = face / 2 - off * np.tan(np.pi / sides)               # hasta dónde llega la cara por dentro
+    clipped = np.clip(u, -half, half)
+    u = clipped + (u - clipped) * 1e-3          # casi colapsado, pero sin puntos repetidos
+    pos = (apothem - off)
+    x = -pos * np.sin(ang) - u * np.cos(ang)
+    y = pos * np.cos(ang) - u * np.sin(ang)
+    return np.stack([x, y, z[:, None] * np.ones((1, cols))], axis=-1), face / (2 * np.sin(np.pi / sides))
 
 
 def _place(t: np.ndarray, mm_per_px: float, shape: str, angle_deg: float, outside: bool = False,
@@ -57,6 +87,15 @@ def _place(t: np.ndarray, mm_per_px: float, shape: str, angle_deg: float, outsid
     if shape in ("cilindro", "cono"):
         a = 2 * np.pi * np.arange(cols) / cols - np.pi   # centro de la imagen en +y, la costura detrás
         lamp = lamp or Lamp()
+        if lamp.sides and shape == "cilindro":
+            z = v[:, 0]
+            outer = np.zeros_like(t)
+            if outside:
+                inner = np.full_like(t, t.max())
+                front, radius = _prism_wall(t.max() - t, z, mm_per_px, lamp.sides)
+                return front, _prism_wall(inner, z, mm_per_px, lamp.sides)[0], radius
+            front, radius = _prism_wall(t, z, mm_per_px, lamp.sides)
+            return front, _prism_wall(outer, z, mm_per_px, lamp.sides)[0], radius
         r_b = lamp.r_bottom or cols * mm_per_px / (2 * np.pi)
         r_t = lamp.r_top or r_b
         if shape == "cono":

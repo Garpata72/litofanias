@@ -101,6 +101,13 @@ def _wavy_disc(r: float, waves: int = 0, amp: float = 0.0) -> CrossSection:
     return CrossSection([np.column_stack([-rr * np.sin(a), rr * np.cos(a)])], FillRule.EvenOdd)
 
 
+def _polygon(r: float, sides: int) -> CrossSection:
+    """Polígono regular de `sides` lados y radio `r` en las esquinas, con una cara centrada delante (+y),
+    como el prisma de shapes._prism_wall."""
+    a = (np.arange(sides) + 0.5) * 2 * np.pi / sides
+    return CrossSection([np.column_stack([-r * np.sin(a), r * np.cos(a)])], FillRule.EvenOdd)
+
+
 def _wavy_ring(r_in: float, r_out: float, z0: float, z1: float, waves: int = 0, amp: float = 0.0) -> Manifold:
     return (_wavy_disc(r_out, waves, amp) - _wavy_disc(r_in, waves, amp)).extrude(z1 - z0).translate((0, 0, z0))
 
@@ -282,21 +289,35 @@ def desk_stand(box_w: float, box_d: float, clearance: float = 0.4, tilt_deg: flo
 
 def round_base(radius: float, t_max: float, height: float = 25.0, clearance: float = 0.4,
                kind: str = "cilindro", waves: int = 0, wave_mm: float = 0.0,
-               battery: tuple[float, float, float] | None = None, tea_light: float | None = None) -> Accessory:
+               battery: tuple[float, float, float] | None = None, tea_light: float | None = None,
+               sides: int = 0) -> Accessory:
     """Base redonda para el cilindro, la lámpara cónica o la cúpula: ranura para la pared (con sus ondas,
-    si las tiene) y hueco central para la luz. `t_max` es el grosor horizontal de la pared.
+    si las tiene) y hueco central para la luz. `t_max` es el grosor horizontal de la pared. Con `sides` la
+    ranura es un polígono para la caja de caras (`radius` es entonces el de las esquinas).
 
     `battery` (largo, ancho, alto) añade un hueco abierto por debajo para un portapilas, y la base crece lo
     necesario; `tea_light` (diámetro) pone en el suelo del hueco un aro que centra una vela LED."""
     if battery:
         height = max(height, battery[2] + FLOOR + GROOVE + 4)
     floor = battery[2] + FLOOR if battery else FLOOR
-    r_groove_out = radius + clearance / 2
-    r_groove_in = radius - t_max - clearance / 2
-    r_out = r_groove_out + WALL + wave_mm
-    r_led = max(r_groove_in - WALL - wave_mm, 3.0)
+    if sides:
+        cos = math.cos(math.pi / sides)
+        apothem = radius * cos
+        r_groove_out = (apothem + clearance / 2) / cos
+        r_groove_in = (apothem - t_max - clearance / 2) / cos
+        r_out = r_groove_out + WALL
+        r_led = max(apothem - t_max - clearance / 2 - WALL, 3.0)
+    else:
+        r_groove_out = radius + clearance / 2
+        r_groove_in = radius - t_max - clearance / 2
+        r_out = r_groove_out + WALL + wave_mm
+        r_led = max(r_groove_in - WALL - wave_mm, 3.0)
     base = _cyl(r_out, 0, height)
-    base -= _wavy_ring(r_groove_in, r_groove_out, height - GROOVE, height + 1, waves, wave_mm)
+    if sides:
+        groove = (_polygon(r_groove_out, sides) - _polygon(r_groove_in, sides)).extrude(GROOVE + 1)
+        base -= groove.translate((0, 0, height - GROOVE))
+    else:
+        base -= _wavy_ring(r_groove_in, r_groove_out, height - GROOVE, height + 1, waves, wave_mm)
     base -= _cyl(r_led, floor, height + 1)
     cw, ch = CABLE
     base -= _box(0, -cw / 2, -1, r_out + 1, cw / 2, ch)                 # canal del cable por debajo
@@ -305,7 +326,7 @@ def round_base(radius: float, t_max: float, height: float = 25.0, clearance: flo
         base = _battery_pocket(base, r_out - WALL, battery, floor)
     if tea_light:
         base = _tea_light(base, r_led, floor, tea_light)
-    what = {"cilindro": "el cilindro", "cono": "la lámpara cónica"}.get(kind, "la cúpula")
+    what = "la caja de caras" if sides else {"cilindro": "el cilindro", "cono": "la lámpara cónica"}.get(kind, "la cúpula")
     notes = [
         f"Base para {what}: imprímela tal como sale, sin soportes.",
         f"La pieza encaja en la ranura de arriba ({GROOVE:.0f} mm de profundidad, holgura {clearance:.1f} mm).",

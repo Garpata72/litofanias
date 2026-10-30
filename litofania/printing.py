@@ -51,25 +51,23 @@ LAYER = "0,12"
 FACE = {"brim": {"plana": 7, "arco": 5, "cilindro": 5, "cono": 5, "esfera": 5, "cupula": 5}}
 
 
-def _slicer_blocks(rows: list[tuple[str, str, str, str]], extras: list[tuple[str, list[str]]]) -> list[str]:
-    """Una sección por laminador. `rows` son (pestaña o grupo en Orca/Bambu, opción en Orca/Bambu,
-    grupo en Cura, opción en Cura, valor): aquí se pasan como (orca_tab, orca_opcion, cura_opcion, valor)
-    y el grupo de Cura va dentro del texto de la opción."""
+def _slicer_blocks(rows: list[tuple]) -> list[str]:
+    """Una sección por laminador. Cada fila es (pestaña de Orca/Bambu, opción de Orca/Bambu, opción de Cura, valor);
+    el valor puede ser una pareja (valor en Orca/Bambu, valor en Cura) cuando difieren."""
     lines: list[str] = []
-    for title, key in (("EN ORCA SLICER Y BAMBU STUDIO (los dos usan los mismos nombres)", "orca"), ("EN CURA", "cura")):
-        lines += [title]
-        for tab, orca, cura, value in rows:
-            lines.append(f"- {orca if key == 'orca' else cura}: {value}" if key == "cura" or not tab
-                         else f"- {tab} › {orca}: {value}")
-        for t, extra in extras:
-            if t == key:
-                lines += [f"- {e}" for e in extra]
+    for title, cura in (("EN ORCA SLICER Y BAMBU STUDIO (los dos usan los mismos nombres)", False), ("EN CURA", True)):
+        lines.append(title)
+        for tab, orca, name, value in rows:
+            if isinstance(value, tuple):
+                value = value[1 if cura else 0]
+            lines.append(f"- {name}: {value}" if cura else f"- {tab} › {orca}: {value}")
         lines.append("")
     return lines
 
 
-def _rows(shape: str, w: float, accessory: bool = False) -> tuple[list, list]:
-    """Filas (pestaña, opción Orca/Bambu, opción Cura, valor) y notas extra por laminador."""
+def _rows(shape: str, w: float, accessory: bool = False, box: bool = False, bridges: bool = False) -> list[tuple]:
+    """Filas (pestaña, opción Orca/Bambu, opción Cura, valor). `box`: la caja de luz y su marco; `bridges`: la caja
+    con ranura, que lleva puentes."""
     if accessory:
         layer, walls, infill, outer, inner, support = "0,2", "3", "15 %", "60", "80", None
         brim = 0
@@ -108,7 +106,15 @@ def _rows(shape: str, w: float, accessory: bool = False) -> tuple[list, list]:
         ]
     else:
         rows.append(("Support", "Enable support", "Generate Support", "desactivado"))
-    return rows, []
+    if box:   # el marco tiene que entrar en su alojamiento: compensa el «pie de elefante» de la primera capa
+        rows.append(("Quality", "Elephant foot compensation", "Initial Layer Horizontal Expansion", ("0,1 mm", "-0,1 mm")))
+    if bridges:
+        rows += [
+            ("Speed", "Bridge speed", "Bridge Skin Speed (activa «Enable Bridge Settings»)", "25 mm/s"),
+            ("Quality", "Bridge flow", "Bridge Skin Flow", ("0,9", "90 %")),
+            ("Filament › Cooling", "Overhang fan speed", "Bridge Fan Speed", "100 %"),
+        ]
+    return rows
 
 
 def _orientation_steps(shape: str) -> list[str]:
@@ -124,16 +130,26 @@ def _orientation_steps(shape: str) -> list[str]:
     ]
 
 
+def _overhang_lines(shape: str, overhang: float, faces: int) -> list[str]:
+    if faces:
+        return ["Las esquinas de la caja son verticales: se imprime sin soportes. Una foto por cara, la primera mirando al frente."]
+    if shape not in ("plana", "arco", "cilindro", "cono"):
+        return []
+    if overhang > 0:
+        return [f"El relieve está limitado a {overhang:.0f}° de voladizo: imprímela sin soportes."]
+    return ["Si al imprimir de pie ves hilos o gotas en el relieve, vuelve a generarla con «Voladizo máximo» de 45-50°."]
+
+
 def settings(shape: str, size_mm: tuple[float, float, float], min_mm: float, max_mm: float,
-             volume_mm3: float) -> str:
+             volume_mm3: float, overhang: float = 0.0, faces: int = 0) -> str:
     """Texto con los ajustes recomendados para esta pieza. `size_mm` es ancho × alto × fondo, con el alto
     tal como se imprime (de pie)."""
     w, h, d = size_mm
     f = lambda v: f"{v:.1f}".replace(".", ",")
-    rows, extras = _rows(shape, w)
+    rows = _rows(shape, w)
     lines = [
         f"Ajustes de impresión recomendados — {PRINTER}",
-        f"Pieza: {NAMES.get(shape, shape)}, {f(w)} × {f(h)} × {f(d)} mm, grosor de {f(min_mm)} a {f(max_mm)} mm",
+        f"Pieza: {f'caja de {faces} caras' if faces else NAMES.get(shape, shape)}, {f(w)} × {f(h)} × {f(d)} mm, grosor de {f(min_mm)} a {f(max_mm)} mm",
         f"Filamento: unos {grams(volume_mm3):.0f} g de PLA",
         "",
         "MATERIAL",
@@ -144,10 +160,11 @@ def settings(shape: str, size_mm: tuple[float, float, float], min_mm: float, max
         "Parte del perfil de la Ender 3 V3 KE (Creality) y cambia solo estas opciones. Los nombres van como salen en",
         "inglés; si tu programa está en español, son las mismas opciones, en la misma pestaña.",
         "",
-        *_slicer_blocks(rows, extras),
+        *_slicer_blocks(rows),
         "ORIENTACIÓN",
         *_orientation_steps(shape),
         *[f"- {line}" for line in ORIENTATION.get(shape, [])],
+        *[f"- {line}" for line in _overhang_lines(shape, overhang, faces)],
         "",
         "COMPROBACIONES",
     ]
@@ -160,11 +177,12 @@ def settings(shape: str, size_mm: tuple[float, float, float], min_mm: float, max
     return "\n".join(lines)
 
 
-def accessory_settings(notes: list[str], size_mm: tuple[float, float, float], grams_pla: float) -> str:
+def accessory_settings(notes: list[str], size_mm: tuple[float, float, float], grams_pla: float, box: bool = False,
+                       bridges: bool = False) -> str:
     """Ajustes para la caja de luz o la base: aquí no pasa luz a través, así que se imprime rápido."""
     w, h, d = size_mm
     f = lambda v: f"{v:.1f}".replace(".", ",")
-    rows, extras = _rows("accesorio", w, accessory=True)
+    rows = _rows("accesorio", w, accessory=True, box=box, bridges=bridges)
     return "\n".join([
         f"Ajustes de impresión recomendados — {PRINTER}",
         f"Accesorio: {f(w)} × {f(h)} × {f(d)} mm, unos {grams_pla:.0f} g de PLA",
@@ -178,7 +196,7 @@ def accessory_settings(notes: list[str], size_mm: tuple[float, float, float], gr
         "Parte del perfil de la Ender 3 V3 KE (Creality) y cambia solo estas opciones. Los nombres van como salen en",
         "inglés; si tu programa está en español, son las mismas opciones, en la misma pestaña.",
         "",
-        *_slicer_blocks(rows, extras),
+        *_slicer_blocks(rows),
         "ORIENTACIÓN",
         "- Imprímelo tal como sale del STL, sin girarlo y sin soportes. Si descargas el 3MF, cada pieza viene ya colocada.",
         "",
