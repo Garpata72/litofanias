@@ -155,8 +155,8 @@ def test_accessories(client):
         info = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": forma}).json()
         stl = client.get(info["stl"]).content
         assert _closed(stl), forma
-        if forma == "plana":   # la caja es algo más grande que la litofanía
-            assert lito["medidas_mm"][0] < info["medidas_mm"][0] < lito["medidas_mm"][0] + 8
+        if forma == "plana":   # la caja y su marco, una al lado de la otra, son más anchas que la litofanía
+            assert info["piezas"] == 2 and lito["medidas_mm"][0] < info["medidas_mm"][0]
         assert "LED USB" in client.get(info["ajustes"]).text
 
 
@@ -252,11 +252,13 @@ def test_new_accessories_and_3mf(client):
 
     lito = client.post("/api/litofanias", json={**base, "ancho": 60}).json()
     desk = acc("plana", escritorio=True, inclinacion=12).json()
-    assert desk["piezas"] == 2 and _closed(client.get(desk["stl"]).content)
+    assert desk["piezas"] == 3 and _closed(client.get(desk["stl"]).content)     # caja, marco y peana
     z = zipfile.ZipFile(io.BytesIO(client.get(lito["tresmf"]).content))
     model = z.read("3D/3dmodel.model").decode()
-    assert model.count("<object ") == 3 and "peana" in model    # litofanía, caja y peana
-    assert zipfile.ZipFile(io.BytesIO(client.get(desk["tresmf"]).content)).read("3D/3dmodel.model").decode().count("<object ") == 2
+    assert model.count("<object ") == 4 and "peana" in model and "marco" in model   # litofanía, caja, marco y peana
+    assert zipfile.ZipFile(io.BytesIO(client.get(desk["tresmf"]).content)).read("3D/3dmodel.model").decode().count("<object ") == 3
+    slot = acc("plana", montaje="ranura").json()
+    assert slot["piezas"] == 1 and _closed(client.get(slot["stl"]).content)
 
     client.post("/api/litofanias", json={**base, "forma": "cono", "diametro": 90, "diametro_arriba": 70, "ondas": 6})
     for kw in ({}, {"pilas": True}, {"vela": True}, {"tipo": "casquillo", "casquillo": 29}):

@@ -35,6 +35,9 @@ BATTERY = (67.0, 48.0, 18.0)   # portapilas de 3 pilas AA con interruptor: largo
 TEA_LIGHT = 39.0    # diámetro de una vela LED (tea light)
 SOCKETS = {"E27": 40.5, "E14": 29.0}   # diámetro del agujero del aro para el casquillo
 GAP = 10.0          # separación entre piezas de un mismo accesorio
+FRAME_T = 2.0       # grosor del marco frontal extraíble
+FIT = 0.15          # holgura por lado entre el marco extraíble y su alojamiento
+BED_XY = 220.0      # cama de la Ender 3 V3 KE
 
 
 @dataclass
@@ -66,13 +69,18 @@ def _mesh(solid: Manifold) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _finish(name: str, solid: Manifold, notes: list[str], extra: list[tuple[str, Manifold]] = ()) -> Accessory:
-    """Pieza lista, apoyada en z = 0 desde el origen. Con `extra`, las demás piezas van a su derecha (en x)."""
+    """Pieza lista, apoyada en z = 0 desde el origen. Con `extra`, las demás piezas van a su derecha (en x),
+    o en otra fila si ya no caben en la cama."""
     verts, faces = _mesh(solid)
     parts = [(name, verts, faces)]
-    x = verts[:, 0].max() + GAP
+    x, y, row = verts[:, 0].max() + GAP, 0.0, verts[:, 1].max()
     for label, m in extra:
         v, f = _mesh(m)
-        v = v + (x, 0, 0)
+        if x + v[:, 0].max() > BED_XY and x > 0:
+            x, y, row = 0.0, row + GAP, row + GAP + v[:, 1].max()
+        else:
+            row = max(row, y + v[:, 1].max())
+        v = v + (x, y, 0)
         x = v[:, 0].max() + GAP
         parts.append((label, v, f))
     all_v = np.vstack([p[1] for p in parts])
@@ -153,13 +161,38 @@ def outline_loops(mask: np.ndarray, mm_per_px: float) -> list[list[tuple[float, 
     return loops
 
 
+def _window(outline, width, height, ox, oy, lip) -> CrossSection:
+    """Ventana del marco frontal: el contorno de la litofanía recortado `lip` hacia dentro (o un rectángulo)."""
+    if outline:
+        low = np.min([np.min(loop, axis=0) for loop in outline], axis=0)   # contorno pegado a la esquina
+        window = CrossSection([np.asarray(loop) - low + (ox, oy) for loop in outline], FillRule.EvenOdd)
+        return window.offset(-lip, JoinType.Round)
+    return CrossSection.square((width - 2 * lip, height - 2 * lip)).translate((ox + lip, oy + lip))
+
+
+def _fit_note(wo: float, ho: float) -> list[str]:
+    if max(wo, ho) > BED_XY or min(wo, ho) > BED_XY:
+        raise ValueError(f"La caja ({wo:.0f} × {ho:.0f} mm) no cabe en la cama de {BED_XY:.0f} mm: reduce la litofanía")
+    if max(wo, ho) > BED_XY - 12:
+        diag = (wo + ho) / math.sqrt(2) <= BED_XY
+        return [f"Entra muy justo en la cama ({wo:.0f} × {ho:.0f} mm). Quita el borde (brim) o el «skirt»"
+                + (" y gírala 45° en el laminador." if diag else ".")]
+    return []
+
+
 def light_box(width: float, height: float, t_max: float, frame: float, depth: float = 30.0,
               clearance: float = 0.4, outline: list | None = None, desk: bool = False,
-              tilt_deg: float = 10.0) -> Accessory:
+              tilt_deg: float = 10.0, mount: str = "marco") -> Accessory:
     """Caja de luz para la plana, tumbada sobre la trasera: x = ancho, y = alto, z = fondo (delante arriba).
+
+    `mount` = "marco": bandeja abierta por delante con un repecho donde descansa la litofanía y un marco
+    frontal extraíble (pieza aparte) que la sujeta; nada queda en el aire al imprimir. `mount` = "ranura":
+    la litofanía entra por arriba en una ranura tapada por un marco fijo (lleva puentes al imprimir).
 
     Con `desk` va acompañada de una peana en la que encaja de pie, inclinada `tilt_deg` grados hacia atrás,
     y el cable sale por la trasera por encima de la peana."""
+    if mount == "marco":
+        return _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg)
     lip = max(2.5, frame)                        # el marco frontal tapa el marco de la litofanía
     wo = width + clearance + 2 * WALL
     ho = height + clearance + WALL               # por arriba la ranura queda abierta
@@ -169,12 +202,7 @@ def light_box(width: float, height: float, t_max: float, frame: float, depth: fl
     box -= _box(WALL, WALL, WALL, wo - WALL, ho - WALL, WALL + depth + 0.01)          # cámara de luz
     box -= _box(WALL, WALL, WALL + depth, wo - WALL, ho + 1, WALL + depth + slot)     # ranura de la litofanía
     ox, oy = WALL + clearance / 2, WALL                                              # esquina de la litofanía
-    if outline:
-        low = np.min([np.min(loop, axis=0) for loop in outline], axis=0)   # contorno pegado a la esquina
-        window = CrossSection([np.asarray(loop) - low + (ox, oy) for loop in outline], FillRule.EvenOdd)
-        window = window.offset(-lip, JoinType.Round)
-    else:
-        window = CrossSection.square((width - 2 * lip, height - 2 * lip)).translate((ox + lip, oy + lip))
+    window = _window(outline, width, height, ox, oy, lip)
     box -= window.extrude(LIP + 2).translate((0, 0, do - LIP - 1))
     cw, ch = CABLE
     cable_y = WALL + (22 if desk else 3)                       # en la de escritorio, por encima de la peana
@@ -185,13 +213,54 @@ def light_box(width: float, height: float, t_max: float, frame: float, depth: fl
         f"Cámara de luz de {depth:.0f} mm de fondo: pega una tira LED USB de 5 V (blanco cálido) en la trasera,",
         "por dentro, y saca el cable por el agujero de atrás.",
     ]
+    notes += _fit_note(wo, ho)
     if not desk:
         return _finish("caja", box, notes)
-    notes += [
-        f"Peana de escritorio (la segunda pieza): la caja encaja de pie en su hueco, inclinada {tilt_deg:.0f}° hacia atrás.",
+    notes += _desk_notes(tilt_deg)
+    return _finish("caja", box, notes, [("peana", desk_stand(wo, do, clearance, tilt_deg))])
+
+
+def _desk_notes(tilt_deg: float) -> list[str]:
+    return [
+        f"Peana de escritorio (pieza aparte): la caja encaja de pie en su hueco, inclinada {tilt_deg:.0f}° hacia atrás.",
         "Imprime la peana apoyada en su base, sin soportes.",
     ]
-    return _finish("caja", box, notes, [("peana", desk_stand(wo, do, clearance, tilt_deg))])
+
+
+def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg) -> Accessory:
+    """Caja de luz de dos piezas: bandeja con repecho + marco frontal extraíble (ver `light_box`)."""
+    lip = max(2.5, frame)                        # anchura del repecho y del borde del marco
+    c = clearance                                # holgura por lado de la litofanía en su alojamiento
+    rw, rh = width + 2 * c, height + 2 * c
+    wo, ho = rw + 2 * WALL, rh + 2 * WALL
+    slot = t_max + 0.3                           # hueco entre repecho y marco para la litofanía
+    rebate = slot + FRAME_T                      # el marco queda enrasado con el borde de la bandeja
+    do = WALL + depth + rebate
+    tray = _box(0, 0, 0, wo, ho, do)
+    tray -= _box(WALL + lip, WALL + lip, WALL, wo - WALL - lip, ho - WALL - lip, WALL + depth + 0.01)   # cámara
+    tray -= _box(WALL, WALL, WALL + depth, wo - WALL, ho - WALL, do + 1)                                # alojamiento
+    tray -= _cyl(6.0, do - FRAME_T - 0.5, do + 1).translate((wo / 2, ho, 0))     # muesca para sacar el marco con la uña
+    cw, ch = CABLE
+    cable_y = WALL + (22 if desk else 3)
+    tray -= _box(wo / 2 - cw / 2, cable_y, -1, wo / 2 + cw / 2, cable_y + ch, WALL + 1)
+    ox, oy = WALL + c, WALL + c
+    cover = _box(WALL + FIT, WALL + FIT, 0, wo - WALL - FIT, ho - WALL - FIT, FRAME_T)
+    cover -= _window(outline, width, height, ox, oy, lip).extrude(FRAME_T + 2).translate((0, 0, -1))
+    notes = [
+        "Caja de luz de dos piezas para la litofanía plana: la bandeja y el marco frontal que se quita y se pone.",
+        "Bandeja: imprímela tal como sale, tumbada sobre la trasera, sin soportes ni puentes.",
+        "Marco: imprímelo apoyado por la cara lisa (tal como sale), sin soportes. Encaja a presión.",
+        f"Montaje: pon la litofanía en el alojamiento (holgura {c:.1f} mm por lado),,",
+        "y presiona el marco encima. Para sacarlo, mete la uña en la muesca de arriba.",
+        f"Cámara de luz de {depth:.0f} mm de fondo: pega una tira LED USB de 5 V (blanco cálido) en la trasera,",
+        "por dentro, y saca el cable por el agujero de atrás.",
+        f"Si el marco queda flojo, pega una tira fina de cinta en su canto; si no entra, líjalo (holgura {FIT:.2f} mm).",
+    ] + _fit_note(wo, ho)
+    extra = [("marco", cover)]
+    if desk:
+        notes += _desk_notes(tilt_deg)
+        extra.append(("peana", desk_stand(wo, do, clearance, tilt_deg)))
+    return _finish("caja", tray, notes, extra)
 
 
 def desk_stand(box_w: float, box_d: float, clearance: float = 0.4, tilt_deg: float = 10.0) -> Manifold:

@@ -380,6 +380,7 @@ class AccessoryRequest(BaseModel):
     tipo: Literal["base", "casquillo"] = "base"    # cilindro y cono: base con luz o aro para el casquillo
     casquillo: float = Field(40.5, ge=20, le=60)    # diámetro del agujero del aro (E27 40,5; E14 29)
     fondo: float = Field(30.0, ge=10, le=80)        # caja de luz: fondo de la cámara para la luz
+    montaje: Literal["marco", "ranura"] = "marco"   # caja de luz: marco frontal extraíble o ranura con marco fijo
     escritorio: bool = False                        # caja de luz con peana para ponerla de pie
     inclinacion: float = Field(10.0, ge=0, le=25)   # inclinación hacia atrás en la peana
     alto: float = Field(25.0, ge=12, le=60)         # bases: altura
@@ -409,7 +410,7 @@ def make_accessory(req: AccessoryRequest) -> dict:
     wall = m.get("pared_mm", t)
     try:
         if req.forma == "plana":
-            a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"), req.escritorio, req.inclinacion)
+            a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"), req.escritorio, req.inclinacion, req.montaje)
         elif req.forma == "arco":
             a = accessories.arc_base(m["radio_mm"], m["angulo"], t, req.alto, c)
         elif req.forma == "esfera":
@@ -471,7 +472,7 @@ def download_model(image_id: str, shape: str) -> FileResponse:
     return FileResponse(_model_path(image_id, shape), media_type="model/stl", filename=f"litofania-{shape}-{name}.stl")
 
 
-PART_NAMES = {"caja": "caja de luz", "base": "base", "peana": "peana", "aro": "aro casquillo"}
+PART_NAMES = {"caja": "caja de luz", "base": "base", "peana": "peana", "marco": "marco frontal", "aro": "aro casquillo"}
 
 
 def _accessory_parts(image_id: str, shape: str, name: str) -> list:

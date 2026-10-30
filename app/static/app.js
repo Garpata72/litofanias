@@ -997,7 +997,7 @@ async function generateAccessory() {
       imagen_id: current.id, forma,
       fondo: Number($("#acc_fondo").value), alto: Number($("#acc_alto").value), holgura: Number($("#acc_holgura").value),
       tipo: $("#acc_tipo").value, casquillo: Number($("#acc_casquillo").value),
-      escritorio: $("#acc_escritorio").checked, inclinacion: Number($("#acc_inclinacion").value),
+      montaje: $("#acc_montaje").value, escritorio: $("#acc_escritorio").checked, inclinacion: Number($("#acc_inclinacion").value),
       pilas: $("#acc_pilas").checked, pilas_largo: Number($("#acc_pilas_largo").value),
       pilas_ancho: Number($("#acc_pilas_ancho").value), pilas_alto: Number($("#acc_pilas_alto").value),
       vela: $("#acc_vela").checked,
