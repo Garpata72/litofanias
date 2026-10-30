@@ -69,3 +69,16 @@ El texto grabado usa la fuente DejaVu Sans Bold, incluida en `litofania/fuentes/
 pip install -r requirements-dev.txt
 pytest
 ```
+
+## Bajorrelieves: prueba de mapas de profundidad (fase 0)
+
+Primer paso para hacer monedas y medallones en relieve a partir de una foto: comparar cómo calcula la profundidad cada método con tus propias fotos, todo en tu ordenador.
+
+- **Windows:** arrastra una o varias fotos (o una carpeta) sobre `probar_profundidad.bat`. La primera vez instala `onnxruntime-directml` (usa la tarjeta gráfica sin instalar CUDA) y descarga los modelos a la carpeta `modelos` (unos 1,4 GB en total, comprobados con SHA-256); después funciona sin internet.
+- **A mano:** `pip install -r requirements-ia.txt` y `python prueba_profundidad.py fotos/ --stl`.
+
+Para cada foto deja en `resultados_profundidad/<foto>/` una hoja `comparativa.png` (mapa de profundidad y bajorrelieve con luz rasante por método, con el tiempo de cálculo), los mapas en PNG de 16 bits y, con `--stl`, una moneda de prueba de 50 mm por método (base 2 mm, relieve 1,6 mm, aro 2,5 mm). Los tiempos de todas las fotos quedan en `tiempos.txt`.
+
+Métodos: **Detalle sin IA** (luminancia con contraste local, para monedas o grabados fotografiados), **Depth Anything V2 Small** por procesador y por gráfica, y **Depth Anything V2 Large** (licencia no comercial, válida para uso personal). `--depthpro` añade Apple Depth Pro (600 MB, muy lento sin una gráfica potente) y `--sin-large` se salta el modelo grande.
+
+Fotos recomendadas: JPEG de calidad alta o PNG, de 2000 a 4000 px en el lado corto, luz difusa sin sombras duras, motivo nítido ocupando el 60-80 % y fondo liso.
