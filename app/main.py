@@ -73,6 +73,7 @@ class LitoRequest(BaseModel):
     centro_y: float = Field(0.5, ge=0, le=1)
     diametro: float = Field(80.0, ge=30, le=210)    # cilindro, esfera y cúpula: diámetro exterior; cono: el de abajo
     diametro_arriba: float = Field(60.0, ge=30, le=210)   # cono: diámetro exterior de arriba
+    caras: int = Field(0, ge=0, le=8)                # cilindro: caja de 3 a 8 caras planas, una foto por cara (0 = redondo)
     ondas: int = Field(0, ge=0, le=24)              # cilindro y cono: ondas en la vuelta (0 = pared lisa)
     onda_mm: float = Field(2.0, ge=0.5, le=10)      # amplitud de las ondas
     agujero: float = Field(40.0, ge=10, le=200)     # esfera: diámetro de la abertura de abajo
@@ -91,6 +92,7 @@ class LitoRequest(BaseModel):
     max: float = Field(3.0, ge=1.0, le=8.0)
     resolucion: float = Field(0.2, ge=0.05, le=1.0)
     marco: float = Field(3.0, ge=0, le=20)
+    voladizo: float = Field(0.0, ge=0, le=80)       # grados máx. de voladizo del relieve al imprimir de pie (0 = sin límite)
     brillo: float = Field(1.0, ge=0.2, le=3.0)
     contraste: float = Field(1.0, ge=0.2, le=3.0)
     gamma: float = Field(1.0, ge=0.2, le=3.0)
@@ -266,10 +268,17 @@ def make_lithophane(req: LitoRequest) -> dict:
         raise HTTPException(422, "El grosor mínimo debe ser menor que el máximo")
     round_shape = req.forma in ("cilindro", "cono", "esfera", "cupula")
     widest = max(req.diametro, req.diametro_arriba) if req.forma == "cono" else req.diametro
-    width = math.pi * widest if round_shape else req.ancho
+    prism = req.forma == "cilindro" and req.caras > 0
+    if req.caras in (1, 2):
+        raise HTTPException(422, "Una caja necesita al menos 3 caras")
+    if prism and req.ondas:
+        raise HTTPException(422, "La caja de caras no lleva ondas")
+    width = req.caras * req.ancho if prism else math.pi * widest if round_shape else req.ancho
     if not round_shape and width <= 2 * req.marco + 5:
         raise HTTPException(422, "El marco es demasiado ancho para ese tamaño")
-    if round_shape and req.diametro <= 2 * req.max + 10:
+    if prism and req.ancho <= 2 * req.max + 10:
+        raise HTTPException(422, "Las caras son demasiado estrechas para ese grosor")
+    if round_shape and not prism and req.diametro <= 2 * req.max + 10:
         raise HTTPException(422, "El diámetro es demasiado pequeño para ese grosor")
     if req.forma == "cono" and req.diametro_arriba <= 2 * req.max + 10:
         raise HTTPException(422, "El diámetro de arriba es demasiado pequeño para ese grosor")
@@ -296,12 +305,19 @@ def make_lithophane(req: LitoRequest) -> dict:
                 raise HTTPException(404, "Una de las fotos del collage ya no existe")
             photos.append(Photo(str(ph), item.girar, _crop(item.recorte), item.zoom, (item.centro_x, item.centro_y)))
 
+    if prism:   # una foto por cara: sin collage se repite la misma en todas
+        if not photos:
+            photos = [Photo(str(path), req.girar, _crop(req.recorte), req.zoom, (req.centro_x, req.centro_y))] * req.caras
+        if len(photos) != req.caras:
+            raise HTTPException(422, f"Pon una foto por cara: la caja tiene {req.caras} caras y el collage {len(photos)} fotos")
+
     uses_fill = req.forma == "plana" or (req.forma in ("esfera", "cupula") and req.ajuste != "panoramica")
     fill = _fill(req) if uses_fill else Fill()
     p = FlatParams(
         width_mm=width, min_mm=req.min, max_mm=req.max, mm_per_px=req.resolucion,
         border_mm=req.marco, brightness=req.brillo, contrast=req.contraste,
         gamma=req.gamma, invert=req.invertir, rotate=req.girar, crop=_crop(req.recorte),
+        overhang_deg=req.voladizo,
     )
     name = f"{req.imagen_id}-{req.forma}"
 
@@ -311,7 +327,7 @@ def make_lithophane(req: LitoRequest) -> dict:
     if req.forma in ("cilindro", "cono"):
         cone = req.forma == "cono"
         lamp = Lamp(req.diametro / 2 if cone else None, req.diametro_arriba / 2 if cone else None,
-                    req.ondas, req.onda_mm if req.ondas else 0.0)
+                    req.ondas, req.onda_mm if req.ondas else 0.0, req.caras if prism else 0)
 
     def build(out: Path, params: FlatParams):
         if req.forma in ("esfera", "cupula"):
@@ -333,14 +349,15 @@ def make_lithophane(req: LitoRequest) -> dict:
 
     size = (r.width_mm, r.height_mm, r.depth_mm)
     (storage.MODELS / f"{name}-ajustes.txt").write_text(
-        printing.settings(req.forma, size, p.min_mm, p.max_mm, r.volume_mm3), encoding="utf-8")
+        printing.settings(req.forma, size, p.min_mm, p.max_mm, r.volume_mm3, req.voladizo,
+                         req.caras if prism else 0), encoding="utf-8")
     # Lo que necesita la caja de luz o la base de esta pieza.
     (storage.MODELS / f"{name}.json").write_text(json.dumps({
         "forma": req.forma, "medidas_mm": size, "grosor_max": p.max_mm, "marco": req.marco,
         "radio_mm": r.radius_mm, "angulo": req.angulo, "agujero": req.agujero, "contorno": r.outline,
         "pestana_mm": r.tab_mm, "radio_arriba_mm": r.radius_top_mm, "ondas": lamp.waves if lamp else 0,
         "onda_mm": lamp.wave_mm if lamp else 0.0, "cuello": req.cuello if req.forma == "esfera" else 0.0,
-        "pared_mm": _wall(r, p.max_mm),
+        "pared_mm": _wall(r, p.max_mm), "caras": req.caras if prism else 0,
     }), encoding="utf-8")
 
     base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
@@ -353,6 +370,7 @@ def make_lithophane(req: LitoRequest) -> dict:
         "grosor_mm": [p.min_mm, p.max_mm],
         "radio_mm": r.radius_mm,
         "gramos": round(printing.grams(r.volume_mm3)),
+        "caras": req.caras if prism else 0,
         "relieve_fuera": req.relieve == "fuera" and req.forma != "plana",
         "ajustes": f"{base}-ajustes.txt",
         "tresmf": f"{base}.3mf",
@@ -380,6 +398,7 @@ class AccessoryRequest(BaseModel):
     tipo: Literal["base", "casquillo"] = "base"    # cilindro y cono: base con luz o aro para el casquillo
     casquillo: float = Field(40.5, ge=20, le=60)    # diámetro del agujero del aro (E27 40,5; E14 29)
     fondo: float = Field(30.0, ge=10, le=80)        # caja de luz: fondo de la cámara para la luz
+    montaje: Literal["marco", "ranura"] = "marco"   # caja de luz: marco frontal extraíble o ranura con marco fijo
     escritorio: bool = False                        # caja de luz con peana para ponerla de pie
     inclinacion: float = Field(10.0, ge=0, le=25)   # inclinación hacia atrás en la peana
     alto: float = Field(25.0, ge=12, le=60)         # bases: altura
@@ -409,16 +428,18 @@ def make_accessory(req: AccessoryRequest) -> dict:
     wall = m.get("pared_mm", t)
     try:
         if req.forma == "plana":
-            a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"), req.escritorio, req.inclinacion)
+            a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"), req.escritorio, req.inclinacion, req.montaje)
         elif req.forma == "arco":
             a = accessories.arc_base(m["radio_mm"], m["angulo"], t, req.alto, c)
         elif req.forma == "esfera":
             a = accessories.sphere_stand(m["agujero"], req.alto, c, t if m.get("cuello") else 0.0, battery, tea)
         elif req.tipo == "casquillo" and req.forma in ("cilindro", "cono"):
+            if m.get("caras"):
+                raise HTTPException(422, "La caja de caras no lleva aro para casquillo: usa la base con luz")
             top = m.get("radio_arriba_mm") or m["radio_mm"]
             a = accessories.socket_ring(top, wall, req.casquillo, c, *waves)
         else:
-            a = accessories.round_base(m["radio_mm"], wall, req.alto, c, req.forma, *waves, battery, tea)
+            a = accessories.round_base(m["radio_mm"], wall, req.alto, c, req.forma, *waves, battery, tea, m.get("caras", 0))
     except ValueError as e:
         raise HTTPException(422, str(e))
     name = f"{req.imagen_id}-{req.forma}"
@@ -427,7 +448,8 @@ def make_accessory(req: AccessoryRequest) -> dict:
     np.savez(storage.MODELS / f"{name}-accesorio.npz", nombres=np.array([p[0] for p in parts]),
              **{f"v{i}": p[1] for i, p in enumerate(parts)}, **{f"f{i}": p[2] for i, p in enumerate(parts)})
     (storage.MODELS / f"{name}-accesorio-ajustes.txt").write_text(
-        printing.accessory_settings(a.notes, a.size_mm, accessories_grams(a)), encoding="utf-8")
+        printing.accessory_settings(a.notes, a.size_mm, accessories_grams(a), req.forma == "plana",
+                                    req.forma == "plana" and req.montaje == "ranura"), encoding="utf-8")
     base = f"/api/litofanias/{req.imagen_id}/{req.forma}"
     return {
         "nombre": {"caja": "Caja de luz", "base": "Base", "peana": "Peana", "aro": "Aro para el casquillo"}[a.name],
@@ -471,7 +493,7 @@ def download_model(image_id: str, shape: str) -> FileResponse:
     return FileResponse(_model_path(image_id, shape), media_type="model/stl", filename=f"litofania-{shape}-{name}.stl")
 
 
-PART_NAMES = {"caja": "caja de luz", "base": "base", "peana": "peana", "aro": "aro casquillo"}
+PART_NAMES = {"caja": "caja de luz", "base": "base", "peana": "peana", "marco": "marco frontal", "aro": "aro casquillo"}
 
 
 def _accessory_parts(image_id: str, shape: str, name: str) -> list:

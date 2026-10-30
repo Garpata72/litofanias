@@ -20,6 +20,7 @@ class FlatParams:
     invert: bool = False
     rotate: int = 0                                         # giro en grados, en el sentido del reloj
     crop: tuple[float, float, float, float] | None = None   # recorte x, y, ancho, alto en fracciones (tras girar)
+    overhang_deg: float = 0.0                               # voladizo máximo del relieve al imprimir de pie (0 = sin límite)
 
 
 ROTATIONS = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180, 270: Image.Transpose.ROTATE_90}
@@ -211,3 +212,19 @@ def thickness_map(gray: np.ndarray, p: FlatParams, wrap: bool = False) -> np.nda
     if pad > 0:
         t = np.pad(t, ((pad, pad), (0, 0) if wrap else (pad, pad)), mode="constant", constant_values=p.max_mm)
     return t
+
+
+def limit_overhang(t: np.ndarray, p: FlatParams, mask: np.ndarray | None = None) -> np.ndarray:
+    """Limita el voladizo del relieve para imprimirlo de pie sin soportes.
+
+    De pie, cada fila (la de arriba de la imagen se imprime la última) puede sobresalir como mucho
+    tan(`overhang_deg`) × `mm_per_px` más que la de debajo. Donde el grosor crece de golpe hacia arriba, por
+    ejemplo del relieve claro al marco grueso, se recorta a una rampa de ese ángulo. Fuera de `mask` no hay pieza
+    y no cuenta."""
+    if p.overhang_deg <= 0:
+        return t
+    step = np.tan(np.radians(min(p.overhang_deg, 85.0))) * p.mm_per_px
+    out = (t if mask is None else np.where(mask, t, np.inf)).copy()
+    for i in range(out.shape[0] - 2, -1, -1):
+        np.minimum(out[i], out[i + 1] + step, out=out[i])
+    return out if mask is None else np.where(mask, out, t)

@@ -45,13 +45,13 @@ async function api(method, url, body) {
 }
 
 /* ───────── Ajustes guardados en este navegador ───────── */
-const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "puntas", "interior", "lados", "base_plana", "colgar", "colgar_ancho", "colgar_agujero", "collage", "collage_filas", "separacion", "diametro_arriba", "ondas", "onda_mm", "agujero_arriba", "cuello", "alto_grados", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relieve", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco"];
+const PARAMS = ["brillo", "contraste", "gamma", "invertir", "forma", "contorno", "puntas", "interior", "lados", "base_plana", "colgar", "colgar_ancho", "colgar_agujero", "collage", "collage_filas", "separacion", "diametro_arriba", "ondas", "onda_mm", "agujero_arriba", "cuello", "alto_grados", "ancho", "angulo", "diametro", "agujero", "ajuste", "cobertura", "relieve", "relleno", "textura_mm", "textura_relieve", "textura_invertir", "textura_bn", "texto", "texto_mm", "min", "max", "resolucion", "marco", "voladizo", "caras"];
 const DEFAULTS = {
   brillo: 1, contraste: 1, gamma: 1, invertir: false,
   forma: "plana", contorno: "rectangulo", puntas: 5, interior: 50, lados: 6, base_plana: 0,
   colgar: false, colgar_ancho: 14, colgar_agujero: 5, collage: false, collage_filas: 1, separacion: 2,
   diametro_arriba: 60, ondas: 0, onda_mm: 2, agujero_arriba: 0, cuello: 0, alto_grados: 0, ancho: 150, angulo: 120, diametro: 80, agujero: 40, ajuste: "centrada", cobertura: 150, relieve: "dentro", relleno: "liso", textura_mm: 40, textura_relieve: 1, textura_invertir: false, textura_bn: false, texto: "", texto_mm: 8,
-  min: 0.8, max: 3, resolucion: 0.2, marco: 3,
+  min: 0.8, max: 3, resolucion: 0.2, marco: 3, voladizo: 0, caras: 0,
 };
 const BED = { x: 220, y: 220, z: 240 };   // Ender 3 V3 KE
 const store = {
@@ -94,6 +94,12 @@ function showShapeFields() {
   $$("[data-acc]").forEach((el) => { if (el.dataset.acc !== accTipo) el.hidden = true; });
   $$("[data-desk]").forEach((el) => (el.hidden = forma !== "plana" || !$("#acc_escritorio").checked));
   $$("[data-bat]").forEach((el) => { if (!$("#acc_pilas").checked) el.hidden = true; });
+  // Caja de caras: se da el ancho de cada cara en vez del diámetro.
+  const faces = forma === "cilindro" && Number($("#caras").value) > 0;
+  $("#ancho").closest("label").hidden = forma === "cilindro" ? !faces : !["plana", "arco"].includes(forma);
+  $("#diametro").closest("label").hidden = !ROUND.includes(forma) || faces;
+  $("#anchoLabel").textContent = faces ? "Ancho de cada cara" : "Ancho total";
+  $$("[data-waves]").forEach((el) => { if (faces) el.hidden = true; });
   $("#diametroLabel").textContent = forma === "cono" ? "Diámetro de abajo" : "Diámetro exterior";
   $$("[data-collage]").forEach((el) => (el.hidden = !$("#collage").checked));
   updateAccessoryButton();
@@ -104,11 +110,12 @@ const LAMP = ["cilindro", "cono"];   // dan la vuelta completa con la foto
 /* Diámetro mayor: en el cono, el más ancho de los dos marca el ancho desarrollado de la foto. */
 const widest = (p) => (p.forma === "cono" ? Math.max(p.diametro, p.diametro_arriba) : p.diametro);
 const SPHERE = ["esfera", "cupula"];
-const developed = (p) => (ROUND.includes(p.forma) ? Math.PI * widest(p) : p.ancho);
+const prism = (p) => p.forma === "cilindro" && p.caras > 0;   // caja de caras planas, una foto en cada una
+const developed = (p) => (prism(p) ? p.caras * p.ancho : ROUND.includes(p.forma) ? Math.PI * widest(p) : p.ancho);
 
 function validParams(p) {
   let ok = true;
-  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "textura_mm", "texto_mm", "min", "max", "resolucion", "marco",
+  for (const k of ["ancho", "angulo", "diametro", "agujero", "cobertura", "textura_mm", "texto_mm", "min", "max", "resolucion", "marco", "voladizo", "caras",
     "puntas", "interior", "lados", "base_plana", "colgar_ancho", "colgar_agujero", "collage_filas", "separacion",
     "diametro_arriba", "ondas", "onda_mm", "agujero_arriba", "cuello", "alto_grados"]) {
     const el = $(`#${k}`);
@@ -117,8 +124,9 @@ function validParams(p) {
     ok &&= !bad;
   }
   if (p.min >= p.max) { $("#min").classList.add("bad"); $("#max").classList.add("bad"); ok = false; }
+  if (prism(p) && (p.caras < 3 || p.ancho <= 2 * p.max + 10)) { $("#caras").classList.add("bad"); ok = false; }
   if (!ROUND.includes(p.forma) && p.ancho <= 2 * p.marco + 5) { $("#marco").classList.add("bad"); ok = false; }
-  if (ROUND.includes(p.forma) && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
+  if (ROUND.includes(p.forma) && !prism(p) && p.diametro <= 2 * p.max + 10) { $("#diametro").classList.add("bad"); ok = false; }
   if (p.forma === "esfera" && p.agujero >= p.diametro - 10) { $("#agujero").classList.add("bad"); ok = false; }
   if (p.forma === "cono" && p.diametro_arriba <= 2 * p.max + 10) { $("#diametro_arriba").classList.add("bad"); ok = false; }
   if (LAMP.includes(p.forma) && p.ondas && p.onda_mm * 4 >= Math.min(p.diametro, p.forma === "cono" ? p.diametro_arriba : p.diametro) / 2) {
@@ -265,7 +273,10 @@ async function uploadMask(file) {
 /* ───────── Varias fotos en una pieza (collage) ─────────
    Cada foto guarda su giro, recorte y encuadre como cuando se abre sola; aquí solo se elige cuáles y en qué orden. */
 let collageIds = store.get("collage") || [];
-const collageOn = (p) => p.collage && collageIds.length >= 2;
+const ownCollage = (p) => p.collage && collageIds.length >= 2;
+// La caja de caras siempre lleva una foto por cara: las del collage o, sin collage, la abierta repetida.
+const collageOn = (p) => ownCollage(p) || (prism(p) && !!current);
+const collageList = (p) => (ownCollage(p) ? collageIds : prism(p) && current ? Array(p.caras).fill(current.id) : collageIds);
 const photoCache = new Map();   // id → { img, canvas, key }: foto girada y recortada de las que no están abiertas
 
 function saveCollage() {
@@ -347,8 +358,9 @@ function collageLayout(n, cols, rowsWanted, sep, wrap, aspect, rows = null) {
 
 /* Medidas del collage en milímetros: ancho y alto de la zona de fotos, huecos y proporción de cada hueco. */
 function collageGeom(p) {
-  const first = photoCanvas(collageIds[0]);
-  const m0 = images.find((x) => x.id === collageIds[0]);
+  const list = collageList(p);
+  const first = photoCanvas(list[0]);
+  const m0 = images.find((x) => x.id === list[0]);
   const a0 = first ? first.width / first.height : m0 ? m0.ancho / m0.alto : 1;
   const wrap = LAMP.includes(p.forma) || (SPHERE.includes(p.forma) && p.ajuste === "panoramica");
   const cut = p.forma === "plana" && p.contorno !== "rectangulo";
@@ -359,7 +371,7 @@ function collageGeom(p) {
     if (wrap) H = R * (Math.PI / 2 - (p.forma === "cupula" ? 0 : -Math.acos(Math.min(1, p.agujero / p.diametro))));
   } else W = wrap ? developed(p) : cut ? p.ancho : developed(p) - 2 * p.marco;
   if (customMask(p) && maskMeta()) H = W / (maskMeta().ancho / maskMeta().alto);
-  const L = collageLayout(collageIds.length, W, p.forma === "plana" ? p.collage_filas : 1, p.separacion, wrap, a0, H);
+  const L = collageLayout(list.length, W, p.forma === "plana" ? p.collage_filas : 1, p.separacion, wrap, a0, H);
   return { W, H: L.rows, slots: L.slots, wrap, ok: L.ok, cellAspect: L.slots[0].w / L.slots[0].h };
 }
 
@@ -372,7 +384,7 @@ function collageComposite(p, q) {
   cv.height = Math.max(2, Math.round(g.H * q));
   const ctx = cv.getContext("2d");
   const rects = g.slots.map((s) => ({ x: s.x * q, y: s.y * q, w: s.w * q, h: s.h * q }));
-  collageIds.forEach((id, n) => {
+  collageList(p).forEach((id, n) => {
     const P = photoCanvas(id), r = rects[n];
     if (!P || !r) return;
     const f = photoFrame(id), a = r.w / r.h;
@@ -921,6 +933,11 @@ function updateSummaryText(p, ok) {
     const chord = theta >= Math.PI ? 2 * R : 2 * R * Math.sin(theta / 2);
     size = `arco de ${fmt(p.angulo)}° · ${fmt(chord)} mm de ancho × ${fmt(H)} mm de alto`;
     onBed = chord <= BED.x && H <= BED.z;
+  } else if (prism(p)) {
+    const across = p.ancho / Math.sin(Math.PI / p.caras);   // de esquina a esquina
+    size = `caja de ${p.caras} caras de ${fmt(p.ancho)} mm × ${fmt(H)} mm de alto`;
+    onBed = across <= BED.x && H <= BED.z;
+    if (ownCollage(p) && collageIds.length !== p.caras) size += ` · ¡pon ${p.caras} fotos, una por cara! (hay ${collageIds.length})`;
   } else if (p.forma === "cono") {
     const dr = Math.abs(p.diametro - p.diametro_arriba) / 2;
     if (H <= dr * 1.05) {
@@ -997,7 +1014,7 @@ async function generateAccessory() {
       imagen_id: current.id, forma,
       fondo: Number($("#acc_fondo").value), alto: Number($("#acc_alto").value), holgura: Number($("#acc_holgura").value),
       tipo: $("#acc_tipo").value, casquillo: Number($("#acc_casquillo").value),
-      escritorio: $("#acc_escritorio").checked, inclinacion: Number($("#acc_inclinacion").value),
+      montaje: $("#acc_montaje").value, escritorio: $("#acc_escritorio").checked, inclinacion: Number($("#acc_inclinacion").value),
       pilas: $("#acc_pilas").checked, pilas_largo: Number($("#acc_pilas_largo").value),
       pilas_ancho: Number($("#acc_pilas_ancho").value), pilas_alto: Number($("#acc_pilas_alto").value),
       vela: $("#acc_vela").checked,
@@ -1033,7 +1050,7 @@ async function generate() {
   try {
     const info = await (await api("POST", "/api/litofanias", {
       imagen_id: current.id, ...p, mascara_id: customMask(p) ? maskId : null, textura_id: textureFill(p) ? textureId : null,
-      collage: collageOn(p) ? collageIds.map((id) => {
+      collage: collageOn(p) ? collageList(p).map((id) => {
         const c = id === current.id ? crop : { x: 0, y: 0, w: 1, h: 1, rot: 0, ...(store.get(`recorte.${id}`) || {}) };
         const f = photoFrame(id), full = c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1;
         return { imagen_id: id, girar: c.rot, recorte: full ? null : [c.x, c.y, c.w, c.h], zoom: f.zoom, centro_x: f.cx, centro_y: f.cy };
@@ -1052,8 +1069,9 @@ async function generate() {
       settings: info.ajustes,
       radius: info.radio_mm,
       sphere: SPHERE.includes(info.forma),
-      rIn: info.relieve_fuera ? info.radio_mm - (info.conico?.pared_mm ?? info.grosor_mm[1]) : 0,
+      rIn: info.relieve_fuera ? info.radio_mm * (info.caras ? Math.cos(Math.PI / info.caras) : 1) - (info.conico?.pared_mm ?? info.grosor_mm[1]) : 0,
       lamp: info.conico,
+      sides: info.caras,
       tMax: info.grosor_mm[1],
     });
   } catch (e) {

@@ -14,7 +14,7 @@ from PIL import Image
 from litofania.accessories import outline_loops
 from litofania.collage import Photo, collage_gray
 from litofania.contours import add_tab, contour_mask, erode, fix_pinches, load_mask
-from litofania.heightmap import FlatParams, load_gray, sphere_gray, thickness_map
+from litofania.heightmap import FlatParams, limit_overhang, load_gray, sphere_gray, thickness_map
 from litofania.textures import PLAIN, flat_fill
 from litofania.shapes import Lamp, build_solid, build_sphere, signed_volume, sphere_lats
 from litofania.stl import write_stl
@@ -87,6 +87,7 @@ def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana"
         outline = outline_loops(mask, p.mm_per_px)
         t = thickness_map(gray, no_frame)
         t[mask & ~erode(mask, round(p.border_mm / p.mm_per_px))] = p.max_mm
+        t = limit_overhang(t, p, mask)
         if tab:
             t, mask, tab_mm = add_tab(t, mask, p.mm_per_px, *tab, p.max_mm)
         s = build_solid(t, p.mm_per_px, shape, mask=mask)
@@ -95,7 +96,7 @@ def generate(image_path: str, out_path: str, p: FlatParams, shape: str = "plana"
         gray = photo_gray(p)
         if text:
             gray = engraving.add_below(gray, text, text_px)
-        t = thickness_map(gray, p, wrap)
+        t = limit_overhang(thickness_map(gray, p, wrap), p)
         if shape == "plana" and tab:
             t, mask, tab_mm = add_tab(t, np.ones(t.shape, dtype=bool), p.mm_per_px, *tab, p.max_mm)
             s = build_solid(t, p.mm_per_px, shape, mask=mask)

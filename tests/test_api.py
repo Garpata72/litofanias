@@ -155,8 +155,8 @@ def test_accessories(client):
         info = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": forma}).json()
         stl = client.get(info["stl"]).content
         assert _closed(stl), forma
-        if forma == "plana":   # la caja es algo más grande que la litofanía
-            assert lito["medidas_mm"][0] < info["medidas_mm"][0] < lito["medidas_mm"][0] + 8
+        if forma == "plana":   # la caja y su marco, una al lado de la otra, son más anchas que la litofanía
+            assert info["piezas"] == 2 and lito["medidas_mm"][0] < info["medidas_mm"][0]
         assert "LED USB" in client.get(info["ajustes"]).text
 
 
@@ -252,11 +252,13 @@ def test_new_accessories_and_3mf(client):
 
     lito = client.post("/api/litofanias", json={**base, "ancho": 60}).json()
     desk = acc("plana", escritorio=True, inclinacion=12).json()
-    assert desk["piezas"] == 2 and _closed(client.get(desk["stl"]).content)
+    assert desk["piezas"] == 3 and _closed(client.get(desk["stl"]).content)     # caja, marco y peana
     z = zipfile.ZipFile(io.BytesIO(client.get(lito["tresmf"]).content))
     model = z.read("3D/3dmodel.model").decode()
-    assert model.count("<object ") == 3 and "peana" in model    # litofanía, caja y peana
-    assert zipfile.ZipFile(io.BytesIO(client.get(desk["tresmf"]).content)).read("3D/3dmodel.model").decode().count("<object ") == 2
+    assert model.count("<object ") == 4 and "peana" in model and "marco" in model   # litofanía, caja, marco y peana
+    assert zipfile.ZipFile(io.BytesIO(client.get(desk["tresmf"]).content)).read("3D/3dmodel.model").decode().count("<object ") == 3
+    slot = acc("plana", montaje="ranura").json()
+    assert slot["piezas"] == 1 and _closed(client.get(slot["stl"]).content)
 
     client.post("/api/litofanias", json={**base, "forma": "cono", "diametro": 90, "diametro_arriba": 70, "ondas": 6})
     for kw in ({}, {"pilas": True}, {"vela": True}, {"tipo": "casquillo", "casquillo": 29}):
@@ -271,3 +273,39 @@ def test_new_accessories_and_3mf(client):
     assert r.status_code == 200 and _closed(client.get(r.json()["stl"]).content)
     client.post("/api/litofanias", json={**base, "forma": "cilindro", "diametro": 40})
     assert acc("cilindro", pilas=True).status_code == 422          # el portapilas no cabe
+
+
+def test_prism_box_and_overhang(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(80, 60), "image/png")}).json()
+    other = client.post("/api/imagenes", files={"archivo": ("otra.png", _png(60, 80), "image/png")}).json()
+    base = {"imagen_id": meta["id"], "resolucion": 0.8, "forma": "cilindro", "caras": 4, "ancho": 60, "separacion": 4}
+    r = client.post("/api/litofanias", json=base)
+    assert r.status_code == 200, r.text            # sin collage, la misma foto en las 4 caras
+    info = r.json()
+    assert info["caras"] == 4 and _closed(client.get(info["stl"]).content)
+    assert abs(info["medidas_mm"][0] - 60) < 2   # cara de 60 mm
+    photos = [{"imagen_id": i} for i in (meta["id"], other["id"], meta["id"], other["id"])]
+    for caras, fuera in ((4, False), (4, True), (3, False)):
+        r = client.post("/api/litofanias", json={**base, "caras": caras, "relieve": "fuera" if fuera else "dentro",
+                                                  "collage": photos[:caras]})
+        assert r.status_code == 200, (caras, r.text)
+        assert _closed(client.get(r.json()["stl"]).content), (caras, fuera)
+    assert client.post("/api/litofanias", json={**base, "collage": photos[:3]}).status_code == 422   # faltan fotos
+    assert client.post("/api/litofanias", json={**base, "caras": 2}).status_code == 422
+
+    flat = {"imagen_id": meta["id"], "resolucion": 0.8, "ancho": 60}
+    plain = client.post("/api/litofanias", json=flat).json()
+    ramp = client.post("/api/litofanias", json={**flat, "voladizo": 45}).json()
+    assert _closed(client.get(ramp["stl"]).content) and ramp["gramos"] <= plain["gramos"]
+
+
+def test_prism_base(client):
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(80, 60), "image/png")}).json()
+    client.post("/api/litofanias", json={"imagen_id": meta["id"], "resolucion": 0.8, "forma": "cilindro",
+                                         "caras": 5, "ancho": 50})
+    for kw in ({}, {"vela": True}):
+        r = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "cilindro", **kw})
+        assert r.status_code == 200, r.text
+        assert _closed(client.get(r.json()["stl"]).content)
+    r = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "cilindro", "tipo": "casquillo"})
+    assert r.status_code == 422
