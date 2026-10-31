@@ -205,3 +205,64 @@ def accessory_settings(notes: list[str], size_mm: tuple[float, float, float], gr
         "- Prueba la litofanía con la luz antes de pegar nada: más luz no siempre se ve mejor.",
         "",
     ])
+
+
+def relief_settings(shape: str, size_mm: tuple[float, float, float], base_mm: float, relief_mm: float,
+                    volume_mm3: float, tab: bool = False) -> str:
+    """Ajustes para un bajorrelieve (moneda, medallón): se imprime tumbado, con el relieve hacia arriba."""
+    w, h, d = size_mm
+    f = lambda v: f"{v:.1f}".replace(".", ",")
+    small = min(w, h) < 40
+    rows = [
+        ("Filament", "Nozzle temperature", "Printing Temperature", "205-210 °C"),
+        ("Filament", "Bed temperature (Textured/Smooth PEI)", "Build Plate Temperature", "60 °C"),
+        ("Filament › Cooling", "Part cooling fan: Min/Max fan speed", "Fan Speed", "100 %"),
+        ("Filament › Cooling", "Full fan speed at layer", "Regular Fan Speed at Layer", "3"),
+        ("Quality", "Layer height", "Layer Height", "0,12 mm (0,08 mm para el máximo detalle; 0,2 mm para un borrador)"),
+        ("Quality", "Initial layer height", "Initial Layer Height", "0,2 mm"),
+        ("Strength", "Wall loops", "Wall Line Count", "3"),
+        ("Strength", "Top shell layers", "Top Layers", "6"),
+        ("Strength", "Bottom shell layers", "Bottom Layers", "4"),
+        ("Strength", "Sparse infill density; Sparse infill pattern", "Infill Density; Infill Pattern", "15 %; Gyroid"),
+        ("Speed", "Outer wall", "Outer Wall Speed", "40 mm/s"),
+        ("Speed", "Inner wall", "Inner Wall Speed", "80 mm/s"),
+        ("Speed", "Top surface", "Top Surface Speed (ajustes avanzados)", "50 mm/s"),
+        ("Speed", "Normal printing (Acceleration)", "Print Acceleration (activa «Enable Acceleration Control»)", "2000 mm/s²"),
+        ("Quality", "Ironing type", "Enable Ironing", "No ironing (desactivado)"),
+        ("Quality", "Resolution", "Maximum Resolution", "0,01 mm"),
+        ("Quality", "Seam position", "Z Seam Alignment: User Specified + Z Seam Position", "Back (detrás)"),
+        ("Support", "Enable support", "Generate Support", "desactivado"),
+        ("Others", "Brim type: Outer brim only; Brim width", "Build Plate Adhesion Type: Brim; Brim Width",
+         "3 mm" if small else "no hace falta (skirt)"),
+    ]
+    return "\n".join([
+        f"Ajustes de impresión recomendados — {PRINTER}",
+        f"Pieza: bajorrelieve ({shape}), {f(w)} × {f(h)} × {f(d)} mm, base de {f(base_mm)} mm y relieve de {f(relief_mm)} mm",
+        f"Filamento: unos {grams(volume_mm3) * 0.8:.0f} g de PLA (con relleno al 15 %)",
+        "",
+        "MATERIAL",
+        "- PLA con un poco de brillo o mate. Un color medio (gris, bronce, dorado, plata) lee mejor el relieve que el blanco puro.",
+        "- Boquilla de 0,4 mm. Con una de 0,2 mm el detalle fino mejora mucho, pero tarda unas 4 veces más.",
+        "",
+        "QUÉ CAMBIAR EN TU LAMINADOR",
+        "Parte del perfil de la Ender 3 V3 KE (Creality) y cambia solo estas opciones. Los nombres van como salen en",
+        "inglés; si tu programa está en español, son las mismas opciones, en la misma pestaña.",
+        "",
+        *_slicer_blocks(rows),
+        "ORIENTACIÓN",
+        "- Imprímela tumbada, tal como sale del STL: cara trasera plana sobre la cama y el relieve hacia arriba.",
+        "- Sin soportes: el relieve crece de capa en capa y el aro de los bordes es vertical.",
+        *(["- La pestaña para colgar va en el mismo plano: no necesita nada especial."] if tab else []),
+        "",
+        "PARA SACAR MÁS DETALLE",
+        "- Altura de capa variable (Orca/Bambu: «Adaptive layer height»; Cura: plugin «Adaptive layers»): capas finas en el relieve",
+        "  y gruesas en la base. Es la mejora que más se nota sin cambiar de boquilla.",
+        "- Baja la velocidad de las paredes exteriores a 30 mm/s si ves la superficie algo rugosa.",
+        "- Un último pase de luz: mira la pieza con una linterna rasante; así se juzga el relieve, no con luz de frente.",
+        "",
+        "COMPROBACIONES",
+        f"- Altura de impresión: {f(d)} mm (cabe en la Ender 3 V3 KE)." if max(w, h) <= BED[0] and d <= BED[2]
+        else "- NO cabe en la Ender 3 V3 KE (220 × 220 × 240 mm): reduce el tamaño.",
+        "- Si descargas el 3MF, ábrelo directamente en el laminador.",
+        "",
+    ])

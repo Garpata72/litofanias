@@ -51,7 +51,7 @@ def shape_mask(shape: str, rows: int, cols: int) -> np.ndarray:
     return fix_pinches(m)
 
 
-def distance_inside(mask: np.ndarray, max_px: float) -> np.ndarray:
+def _distance_exact(mask: np.ndarray, max_px: float) -> np.ndarray:
     """Distancia euclídea (en píxeles) de cada píxel de `mask` al borde, exacta hasta `max_px`; más lejos vale max_px+1."""
     R = int(np.ceil(max_px))
     outside = np.pad(~mask, R, constant_values=True)
@@ -74,6 +74,22 @@ def distance_inside(mask: np.ndarray, max_px: float) -> np.ndarray:
             todo &= ~hit
     dist[~mask] = 0.0
     return dist
+
+
+def distance_inside(mask: np.ndarray, max_px: float, budget: int = 40) -> np.ndarray:
+    """Como _distance_exact, pero si el alcance pasa de `budget` píxeles se calcula en una rejilla más gruesa
+    (el coste crece con el cuadrado del alcance) y se escala: el error es de unos pocos píxeles de la rejilla fina."""
+    f = int(np.ceil(max_px / budget))
+    if f <= 1:
+        return _distance_exact(mask, max_px)
+    rows, cols = mask.shape
+    small = np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).resize(
+        (-(-cols // f), -(-rows // f)), Image.Resampling.BOX)) >= 128
+    d = _distance_exact(small, max_px / f) * f
+    full = np.asarray(Image.fromarray(d.astype(np.float32), mode="F").resize((cols, rows), Image.Resampling.BILINEAR))
+    full = np.minimum(full, max_px + 1.0)
+    full[~mask] = 0.0
+    return full
 
 
 def fit_photo(rel: np.ndarray, rows: int, cols: int, zoom: float = 1.0, center: tuple[float, float] = (0.5, 0.5)) -> np.ndarray:

@@ -15,6 +15,10 @@
     <img src="/icono.png" width="26" height="26" alt="">
     <span class="txt">Lito<b>fanías</b></span>
   </a>
+  <div class="seg" role="group" aria-label="Qué crear" id="modeSeg">
+    <button id="modeLito" type="button" class="segbtn" aria-pressed="true">Litofanía</button>
+    <button id="modeRelieve" type="button" class="segbtn" aria-pressed="false">Bajorrelieve</button>
+  </div>
   <span class="spacer"></span>
   <button id="btnView" class="btn" type="button" title="Abrir un STL o 3MF del ordenador en el visor 3D">
     <span data-icon="cube"></span><span class="txt">Ver STL / 3MF</span>
@@ -32,8 +36,54 @@
     <div class="sidehead"><span>Imágenes</span></div>
     <div id="images" class="thumbs"></div>
 
-    <div class="sidehead"><span>Varias fotos en una pieza</span></div>
-    <div class="fields">
+    <div class="sidehead" data-modo="relieve"><span>Bajorrelieve</span></div>
+    <div class="fields" data-modo="relieve">
+      <p class="hint">Convierte la foto en una moneda o medallón con relieve. La IA calcula la profundidad en tu ordenador, sin internet una vez descargado el modelo.</p>
+      <label class="fsel"><span>Método</span>
+        <select id="r_metodo" aria-label="Método de profundidad">
+          <option value="large">IA grande (mejor calidad)</option>
+          <option value="small">IA pequeña (rápida)</option>
+          <option value="sin-ia">Sin IA (solo luminosidad)</option>
+        </select></label>
+      <div class="maskbox" id="modelBox"></div>
+      <label class="fsel" title="Auto: quita el fondo solo si hay un motivo claro (retrato, animal, objeto)"><span>Quitar el fondo</span>
+        <select id="r_fondo" aria-label="Quitar el fondo">
+          <option value="auto">Automático</option>
+          <option value="si">Sí</option>
+          <option value="no">No (foto entera)</option>
+        </select></label>
+      <label class="fsel"><span>Forma</span>
+        <select id="r_forma" aria-label="Forma de la pieza">
+          <option value="circulo">Círculo (moneda)</option>
+          <option value="ovalo">Óvalo (camafeo)</option>
+          <option value="redondeado">Redondeado</option>
+          <option value="escudo">Escudo</option>
+        </select></label>
+      <label class="num"><span>Ancho</span><input id="r_ancho" type="number" min="20" max="200" step="1" value="50"><i>mm</i></label>
+      <label class="num" data-r-alto><span>Alto</span><input id="r_alto" type="number" min="20" max="200" step="1" value="50"><i>mm</i></label>
+      <label class="num"><span>Base</span><input id="r_base" type="number" min="0.8" max="10" step="0.2" value="2"><i>mm</i></label>
+      <label class="num"><span>Relieve</span><input id="r_relieve" type="number" min="0.2" max="8" step="0.1" value="1.6"><i>mm</i></label>
+      <label class="num"><span>Aro liso</span><input id="r_aro" type="number" min="0" max="8" step="0.5" value="2.5"><i>mm</i></label>
+      <label class="num" title="Hunde el campo ligeramente, como las monedas reales"><span>Campo cóncavo</span><input id="r_campo" type="number" min="0" max="3" step="0.1" value="0"><i>mm</i></label>
+      <label class="slider" title="Más compresión aplana la forma global y deja más detalle fino"><span>Compresión</span><output data-for="r_compresion"></output>
+        <input id="r_compresion" type="range" min="0" max="12" step="0.5" value="4"></label>
+      <label class="slider" title="Recupera pelo, tela o grabados que la IA suaviza"><span>Textura de la foto</span><output data-for="r_textura"></output>
+        <input id="r_textura" type="range" min="0" max="1" step="0.05" value="0.15"></label>
+      <label class="slider"><span>Zoom</span><output data-for="r_zoom"></output>
+        <input id="r_zoom" type="range" min="1" max="4" step="0.05" value="1"></label>
+      <label class="slider"><span>Centro horizontal</span><output data-for="r_cx"></output>
+        <input id="r_cx" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+      <label class="slider"><span>Centro vertical</span><output data-for="r_cy"></output>
+        <input id="r_cy" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+      <label class="check"><input id="r_colgar" type="checkbox"> Pestaña con agujero para colgar</label>
+      <label class="num" data-r-hang><span>Ancho de la pestaña</span><input id="r_colgar_ancho" type="number" min="6" max="30" step="1" value="10"><i>mm</i></label>
+      <label class="num" data-r-hang><span>Agujero</span><input id="r_colgar_agujero" type="number" min="1" max="20" step="0.5" value="4"><i>mm</i></label>
+      <label class="num"><span>Resolución</span><input id="r_resolucion" type="number" min="0.03" max="0.5" step="0.01" value="0.1"><i>mm/px</i></label>
+      <p class="hint">Gira la foto con los botones ⟲ ⟳ de la vista «Original». Con la Ender 3 V3 KE, 0,1 mm/px y capas de 0,12 mm dan buen detalle; el archivo de ajustes de impresión (Orca, Bambu y Cura) se genera con la pieza.</p>
+    </div>
+
+    <div class="sidehead" data-modo="lito"><span>Varias fotos en una pieza</span></div>
+    <div class="fields" data-modo="lito">
       <label class="check"><input id="collage" type="checkbox"> Usar varias fotos (collage)</label>
       <div class="maskbox" data-collage>
         <div id="collageList" class="thumbs"></div>
@@ -44,8 +94,8 @@
       </div>
     </div>
 
-    <div class="sidehead"><span>Ajustes de imagen</span><button id="btnReset" class="iconbtn" data-icon="refresh" title="Volver a los valores iniciales" aria-label="Restablecer ajustes"></button></div>
-    <div class="fields">
+    <div class="sidehead" data-modo="lito"><span>Ajustes de imagen</span><button id="btnReset" class="iconbtn" data-icon="refresh" title="Volver a los valores iniciales" aria-label="Restablecer ajustes"></button></div>
+    <div class="fields" data-modo="lito">
       <label class="slider"><span>Brillo</span><output data-for="brillo"></output>
         <input id="brillo" type="range" min="0.2" max="3" step="0.05" value="1"></label>
       <label class="slider"><span>Contraste</span><output data-for="contraste"></output>
@@ -55,8 +105,8 @@
       <label class="check"><input id="invertir" type="checkbox"> Invertir claros y oscuros</label>
     </div>
 
-    <div class="sidehead"><span>Litofanía</span></div>
-    <div class="fields">
+    <div class="sidehead" data-modo="lito"><span>Litofanía</span></div>
+    <div class="fields" data-modo="lito">
       <div class="presets">
         <select id="plantilla" aria-label="Plantilla de ajustes"><option value="">Plantillas…</option></select>
         <button id="btnPresetSave" class="iconbtn" type="button" data-icon="save" title="Guardar los ajustes actuales como plantilla" aria-label="Guardar plantilla"></button>
@@ -149,8 +199,8 @@
       <p class="hint">Valores pensados para una Ender 3 V3 KE con boquilla de 0,4 mm.</p>
     </div>
 
-    <div class="sidehead"><span>Caja de luz y soporte</span></div>
-    <div class="fields">
+    <div class="sidehead" data-modo="lito"><span>Caja de luz y soporte</span></div>
+    <div class="fields" data-modo="lito">
       <label class="fsel" data-shapes="cilindro cono"><span>Pieza</span>
         <select id="acc_tipo" aria-label="Qué accesorio">
           <option value="base">Base con luz</option>
@@ -190,6 +240,7 @@
       <h1 id="title">Sin imagen</h1>
       <p id="summary" aria-live="polite"></p>
       <button id="btnStl" class="btn primary" type="button" disabled><span data-icon="cube"></span> Generar y ver en 3D</button>
+      <button id="btnRelieve" class="btn primary" type="button" disabled hidden><span data-icon="cube"></span> Generar bajorrelieve</button>
     </div>
     <div id="empty" class="empty">
       <span data-icon="upload"></span>
@@ -206,7 +257,15 @@
           </span></figcaption>
         <div class="stage"><canvas id="cvFrame" aria-label="Encuadre de la foto"></canvas></div>
       </figure>
-      <figure class="view">
+      <figure class="view" data-modo="relieve">
+        <figcaption>Relieve <span class="mute">(luz rasante)</span></figcaption>
+        <div class="stage"><img id="imgLuz" alt="Vista del relieve con luz rasante"></div>
+      </figure>
+      <figure class="view" data-modo="relieve">
+        <figcaption>Profundidad <span class="mute">(lo claro está cerca)</span></figcaption>
+        <div class="stage"><img id="imgProf" alt="Mapa de profundidad"></div>
+      </figure>
+      <figure class="view" data-modo="lito">
         <figcaption>A contraluz <span class="mute">(simulación)</span></figcaption>
         <div class="stage lit"><canvas id="cvLit" aria-label="Simulación de la litofanía iluminada"></canvas></div>
       </figure>
@@ -245,5 +304,6 @@
 <script type="importmap">{ "imports": { "three": "/vendor/three/three.module.min.js" } }</script>
 <script type="module" src="/viewer.js"></script>
 <script src="/app.js"></script>
+<script src="/relieve.js"></script>
 </body>
 </html>
