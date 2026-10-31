@@ -35,7 +35,7 @@ if errorlevel 1 (
   copy /y requirements-ia.txt .venv\requirements-ia.instalado >nul
 )
 
-"%VPY%" prueba_profundidad.py --stl --quitar-fondo %*
+"%VPY%" prueba_profundidad.py --stl %*
 if errorlevel 1 goto :error
 start "" "resultados_profundidad"
 pause

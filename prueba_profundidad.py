@@ -28,7 +28,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-from litofania.background import subject_mask  # noqa: E402
+from litofania.background import dominant, subject_mask  # noqa: E402
 from litofania.basrelief import aislar, blur, compress, normalize, shade  # noqa: E402
 from litofania.medal import SHAPES, MedalParams  # noqa: E402
 from litofania.medal import build as medal_build  # noqa: E402
@@ -250,7 +250,8 @@ def _font(size: int):
         return ImageFont.load_default()
 
 
-def hoja(foto: Image.Image, filas: list[tuple[Resultado, Image.Image | None, Image.Image | None]], path: Path) -> None:
+def hoja(foto: Image.Image, filas: list[tuple[Resultado, Image.Image | None, Image.Image | None]], path: Path,
+         nota: str = "") -> None:
     cell = 420
     th = lambda im: ImageOps.contain(im, (cell, cell))  # noqa: E731
     head = 64
@@ -261,6 +262,8 @@ def hoja(foto: Image.Image, filas: list[tuple[Resultado, Image.Image | None, Ima
     d = ImageDraw.Draw(sheet)
     big, small = _font(24), _font(16)
     d.text((24, 18), "Profundidad y bajorrelieve con luz rasante", font=big, fill=(240, 200, 120))
+    if nota:
+        d.text((24 + 560, 26), nota, font=small, fill=(200, 200, 200))
     d.text((24, head + 8), "Foto original", font=small, fill=(230, 230, 230))
     sheet.paste(th(foto.convert("RGB")), (24, head + 36))
     y = head + row_h
@@ -298,7 +301,7 @@ def mascara(rgb: Image.Image, size: tuple[int, int], cache: dict) -> np.ndarray 
 
 
 def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache: dict,
-             quitar_fondo: bool = False, forma: str = "circulo", colgar: bool = False) -> list[Resultado]:
+             fondo_modo: str = "auto", forma: str = "circulo", colgar: bool = False) -> list[Resultado]:
     img = ImageOps.exif_transpose(Image.open(foto_path))
     rgb = img.convert("RGB")
     if max(rgb.size) > 4096:
@@ -310,9 +313,18 @@ def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache
     out.mkdir(parents=True, exist_ok=True)
     mm_px = COIN_MM / max(size)
 
-    fondo = mascara(rgb, size, cache) if quitar_fondo else None
+    fondo = mascara(rgb, size, cache) if fondo_modo != "no" else None
+    nota = ""
     if fondo is not None:
         Image.fromarray((fondo * 255).astype(np.uint8)).save(out / "mascara-motivo.png")
+        ok, cobertura, trozo = dominant(fondo)
+        if fondo_modo == "auto" and not ok:
+            print(f"  fondo conservado: no hay un motivo claro (ocupa el {cobertura:.0%} y su trozo mayor el {trozo:.0%})."
+                  " Usa --fondo si para quitarlo igualmente.")
+            fondo = None
+            nota = "Fondo conservado (no hay un motivo claro)"
+        else:
+            nota = "Fondo quitado"
 
     filas, resultados = [], []
     for m in metodos:
@@ -334,7 +346,7 @@ def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache
         filas.append((r, dep_img, rel_img))
         if stl:
             moneda(rel, out / f"{m}-moneda-50mm.stl", forma, colgar).save(out / f"{m}-moneda.png")
-    hoja(rgb, filas, out / "comparativa.png")
+    hoja(rgb, filas, out / "comparativa.png", nota)
     return resultados
 
 
@@ -343,8 +355,10 @@ def main() -> int:
     ap.add_argument("fotos", nargs="+", help="fotos o carpetas con fotos")
     ap.add_argument("--depthpro", action="store_true", help="probar también Apple Depth Pro (descarga 600 MB)")
     ap.add_argument("--sin-large", action="store_true", help="no probar Depth Anything V2 Large (descarga 1,3 GB)")
-    ap.add_argument("--quitar-fondo", action="store_true",
-                    help="dejar liso el fondo con BiRefNet lite (descarga 224 MB); mejor para retratos y objetos")
+    ap.add_argument("--fondo", choices=("auto", "si", "no"), default="auto",
+                    help="dejar liso el fondo con BiRefNet lite (descarga 224 MB). auto: solo si hay un motivo claro "
+                         "(retrato, animal, objeto); no en fotos que ya son un relieve")
+    ap.add_argument("--quitar-fondo", dest="fondo", action="store_const", const="si", help=argparse.SUPPRESS)
     ap.add_argument("--forma", choices=SHAPES, default="circulo", help="forma de la moneda de prueba (con --stl)")
     ap.add_argument("--colgar", action="store_true", help="añadir pestaña con agujero para colgar (con --stl)")
     ap.add_argument("--stl", action="store_true", help="generar una moneda de prueba de 50 mm por método")
@@ -378,7 +392,7 @@ def main() -> int:
     tabla = []
     for foto in fotos:
         print(f"\n{foto.name}")
-        for r in procesar(foto, metodos, salida, a.stl, cache, a.quitar_fondo, a.forma, a.colgar):
+        for r in procesar(foto, metodos, salida, a.stl, cache, a.fondo, a.forma, a.colgar):
             tabla.append(f"{foto.name}\t{r.clave}\t{r.dispositivo}\t"
                          f"{'ERROR ' + r.error if r.error else f'{r.calculo_s:.2f}'}\t{r.carga_s:.2f}")
     salida.mkdir(parents=True, exist_ok=True)

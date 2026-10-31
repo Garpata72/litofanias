@@ -48,3 +48,17 @@ def test_aislar_deja_el_fondo_liso_y_el_motivo_en_rango():
     out = aislar(rel, mask)
     assert out[:10].max() < 1e-3 and out[:, :10].max() < 1e-3
     assert out[25:35, 25:35].min() > 0.05 and out.max() <= 1.0
+
+
+def test_motivo_claro_frente_a_panel_de_figuras():
+    from litofania.background import dominant
+    uno = np.zeros((200, 150))
+    uno[40:160, 40:110] = 1.0
+    assert dominant(uno)[0]
+    varios = np.zeros((200, 150))
+    for y in (10, 80, 150):
+        for x in (10, 90):
+            varios[y:y + 30, x:x + 30] = 1.0
+    assert not dominant(varios)[0]
+    assert not dominant(np.ones((200, 150)))[0]
+    assert not dominant(np.zeros((200, 150)))[0]

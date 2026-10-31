@@ -81,7 +81,7 @@ Para cada foto deja en `resultados_profundidad/<foto>/` una hoja `comparativa.pn
 
 Métodos: **Detalle sin IA** (luminancia con contraste local, para monedas o grabados fotografiados), **Depth Anything V2 Small** por procesador y por gráfica, y **Depth Anything V2 Large** (licencia no comercial, válida para uso personal). `--depthpro` añade Apple Depth Pro (600 MB, muy lento sin una gráfica potente) y `--sin-large` se salta el modelo grande.
 
-`probar_profundidad.bat` usa `--quitar-fondo`: deja liso el fondo con BiRefNet lite (MIT, 224 MB, también local) para que cortinas, ramas o halos no entren en el relieve. Por línea de comandos es opcional.
+`--fondo auto` (por defecto, también en `probar_profundidad.bat`) deja liso el fondo con BiRefNet lite (MIT, 224 MB, también local) cuando la foto tiene un motivo claro (retrato, animal, objeto), para que cortinas, ramas o halos no entren en el relieve. Si la foto ya es un relieve (un panel con varias figuras) lo conserva entero. `--fondo si` lo fuerza y `--fondo no` lo desactiva.
 
 Con `--stl` la moneda de prueba puede tener otra forma (`--forma circulo|ovalo|redondeado|escudo`) y pestaña para colgar (`--colgar`); además del STL deja una vista `*-moneda.png` de la pieza entera.
 
