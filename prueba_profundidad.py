@@ -265,7 +265,7 @@ def hoja(foto: Image.Image, filas: list[tuple[Resultado, Image.Image | None, Ima
     big, small = _font(24), _font(16)
     d.text((24, 18), "Profundidad y bajorrelieve con luz rasante", font=big, fill=(240, 200, 120))
     if nota:
-        d.text((24 + 560, 26), nota, font=small, fill=(200, 200, 200))
+        d.text((24, 44), nota, font=small, fill=(200, 200, 200))
     d.text((24, head + 8), "Foto original", font=small, fill=(230, 230, 230))
     sheet.paste(th(foto.convert("RGB")), (24, head + 36))
     y = head + row_h
