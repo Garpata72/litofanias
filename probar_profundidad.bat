@@ -2,6 +2,7 @@
 rem Bajorrelieves, fase 0: arrastra fotos (o una carpeta) sobre este archivo para comparar los mapas de profundidad.
 rem Usa el mismo entorno que iniciar.bat. La primera vez instala onnxruntime y descarga los modelos (necesita internet).
 setlocal
+chcp 65001 >nul
 cd /d "%~dp0"
 title Prueba de profundidad
 
@@ -28,7 +29,7 @@ set "VPY=.venv\Scripts\python.exe"
 
 fc /b requirements-ia.txt .venv\requirements-ia.instalado >nul 2>nul
 if errorlevel 1 (
-  echo Instalando las librerias de IA (solo la primera vez)...
+  echo Instalando las librerias de IA, solo la primera vez...
   "%VPY%" -m pip install --disable-pip-version-check -r requirements-ia.txt
   if errorlevel 1 goto :error
   copy /y requirements-ia.txt .venv\requirements-ia.instalado >nul
