@@ -31,6 +31,12 @@ def normalize(a: np.ndarray, lo: float = 1.0, hi: float = 99.0, mask: np.ndarray
     return np.clip((a - p0) / max(p1 - p0, 1e-9), 0.0, 1.0)
 
 
+def aislar(rel: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Deja el fondo liso (0) y reescala el relieve del motivo a 0..1; el borde baja en rampa de unos 2 px."""
+    soft = np.clip(blur(mask, 1.5), 0.0, 1.0)
+    return normalize(rel, 1.0, 99.0, mask > 0.5) * soft
+
+
 def poisson(div: np.ndarray) -> np.ndarray:
     """Superficie cuyo laplaciano es `div`, con bordes de derivada nula (reflejo + FFT)."""
     rows, cols = div.shape

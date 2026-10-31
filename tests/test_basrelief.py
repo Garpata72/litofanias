@@ -37,3 +37,14 @@ def test_blur_y_shade():
     assert abs(b.sum() - 1.0) < 1e-6 and b.max() < 0.1
     img = shade(np.zeros((10, 12)), 0.1)
     assert img.shape == (10, 12, 3) and img.dtype == np.uint8
+
+
+def test_aislar_deja_el_fondo_liso_y_el_motivo_en_rango():
+    from litofania.basrelief import aislar
+    rel = np.full((60, 60), 0.3)
+    rel[20:40, 20:40] = np.linspace(0.4, 0.9, 20)[None, :]
+    mask = np.zeros((60, 60))
+    mask[20:40, 20:40] = 1.0
+    out = aislar(rel, mask)
+    assert out[:10].max() < 1e-3 and out[:, :10].max() < 1e-3
+    assert out[25:35, 25:35].min() > 0.05 and out.max() <= 1.0

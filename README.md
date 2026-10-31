@@ -81,4 +81,6 @@ Para cada foto deja en `resultados_profundidad/<foto>/` una hoja `comparativa.pn
 
 Métodos: **Detalle sin IA** (luminancia con contraste local, para monedas o grabados fotografiados), **Depth Anything V2 Small** por procesador y por gráfica, y **Depth Anything V2 Large** (licencia no comercial, válida para uso personal). `--depthpro` añade Apple Depth Pro (600 MB, muy lento sin una gráfica potente) y `--sin-large` se salta el modelo grande.
 
+`probar_profundidad.bat` usa `--quitar-fondo`: deja liso el fondo con BiRefNet lite (MIT, 224 MB, también local) para que cortinas, ramas o halos no entren en el relieve. Por línea de comandos es opcional.
+
 Fotos recomendadas: JPEG de calidad alta o PNG, de 2000 a 4000 px en el lado corto, luz difusa sin sombras duras, motivo nítido ocupando el 60-80 % y fondo liso.

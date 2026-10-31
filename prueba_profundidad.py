@@ -28,7 +28,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-from litofania.basrelief import blur, compress, normalize, shade  # noqa: E402
+from litofania.background import subject_mask  # noqa: E402
+from litofania.basrelief import aislar, blur, compress, normalize, shade  # noqa: E402
 from litofania.contours import contour_mask  # noqa: E402
 from litofania.shapes import _masked_flat  # noqa: E402
 from litofania.stl import write_stl  # noqa: E402
@@ -64,6 +65,9 @@ MODELOS = {
     "depthpro": Modelo("Apple Depth Pro (q4f16)", "dp-q4f16.onnx",
                        f"{HF}/DepthPro-ONNX/resolve/main/onnx/model_q4f16.onnx",
                        "714842d1e17986a6ae6bac18a7c66bd6e041aa88acf714e7b494a206cce5c2dc", 600, "Apple ML Research (uso personal)"),
+    "birefnet": Modelo("BiRefNet lite (quitar fondo)", "birefnet-lite.onnx",
+                       f"{HF}/BiRefNet_lite-ONNX/resolve/main/onnx/model.onnx",
+                       "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333", 224, "MIT"),
 }
 
 WORK_PX = 800          # lado mayor de la profundidad que se compara
@@ -282,7 +286,22 @@ def hoja(foto: Image.Image, filas: list[tuple[Resultado, Image.Image | None, Ima
     sheet.save(path)
 
 
-def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache: dict) -> list[Resultado]:
+def mascara(rgb: Image.Image, size: tuple[int, int], cache: dict) -> np.ndarray | None:
+    key = ("birefnet", True)
+    try:
+        if key not in cache:
+            cache[key] = sesion(asegurar_modelo("birefnet"), True)
+        t = time.perf_counter()
+        m = subject_mask(cache[key][0], rgb, size)
+        print(f"  fondo... {time.perf_counter() - t:.1f} s ({cache[key][1]})")
+        return m
+    except Exception as e:  # sin máscara se sigue con el fondo, como antes
+        print(f"  fondo... ERROR: {type(e).__name__}: {e}"[:200])
+        return None
+
+
+def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache: dict,
+             quitar_fondo: bool = False) -> list[Resultado]:
     img = ImageOps.exif_transpose(Image.open(foto_path))
     rgb = img.convert("RGB")
     if max(rgb.size) > 4096:
@@ -293,6 +312,10 @@ def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache
     out = salida / foto_path.stem
     out.mkdir(parents=True, exist_ok=True)
     mm_px = COIN_MM / max(size)
+
+    fondo = mascara(rgb, size, cache) if quitar_fondo else None
+    if fondo is not None:
+        Image.fromarray((fondo * 255).astype(np.uint8)).save(out / "mascara-motivo.png")
 
     filas, resultados = [], []
     for m in metodos:
@@ -305,6 +328,8 @@ def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache
             continue
         print(f"{r.calculo_s:.1f} s ({r.dispositivo}{', ' + ', '.join(r.notas) if r.notas else ''})")
         rel = relieve(r.depth, gray)
+        if fondo is not None:
+            rel = aislar(rel, fondo)
         dep_img = Image.fromarray((r.depth * 255).astype(np.uint8))
         Image.fromarray((r.depth * 65535).astype(np.uint16)).save(out / f"{m}-profundidad.png")
         rel_img = Image.fromarray(shade(rel * RELIEF_MM, mm_px))
@@ -321,6 +346,8 @@ def main() -> int:
     ap.add_argument("fotos", nargs="+", help="fotos o carpetas con fotos")
     ap.add_argument("--depthpro", action="store_true", help="probar también Apple Depth Pro (descarga 600 MB)")
     ap.add_argument("--sin-large", action="store_true", help="no probar Depth Anything V2 Large (descarga 1,3 GB)")
+    ap.add_argument("--quitar-fondo", action="store_true",
+                    help="dejar liso el fondo con BiRefNet lite (descarga 224 MB); mejor para retratos y objetos")
     ap.add_argument("--stl", action="store_true", help="generar una moneda de prueba de 50 mm por método")
     ap.add_argument("--salida", default=str(BASE / "resultados_profundidad"))
     a = ap.parse_args()
@@ -352,7 +379,7 @@ def main() -> int:
     tabla = []
     for foto in fotos:
         print(f"\n{foto.name}")
-        for r in procesar(foto, metodos, salida, a.stl, cache):
+        for r in procesar(foto, metodos, salida, a.stl, cache, a.quitar_fondo):
             tabla.append(f"{foto.name}\t{r.clave}\t{r.dispositivo}\t"
                          f"{'ERROR ' + r.error if r.error else f'{r.calculo_s:.2f}'}\t{r.carga_s:.2f}")
     salida.mkdir(parents=True, exist_ok=True)
