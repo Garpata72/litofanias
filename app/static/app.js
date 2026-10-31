@@ -1012,7 +1012,7 @@ async function generateAccessory() {
   try {
     const info = await (await api("POST", "/api/accesorios", {
       imagen_id: current.id, forma,
-      fondo: Number($("#acc_fondo").value), alto: Number($("#acc_alto").value), holgura: Number($("#acc_holgura").value),
+      fondo: Number($("#acc_fondo").value), alto: Number($("#acc_alto").value), holgura: Number($("#acc_holgura").value), holgura_marco: Number($("#acc_holgura_marco").value),
       tipo: $("#acc_tipo").value, casquillo: Number($("#acc_casquillo").value),
       montaje: $("#acc_montaje").value, escritorio: $("#acc_escritorio").checked, inclinacion: Number($("#acc_inclinacion").value),
       pilas: $("#acc_pilas").checked, pilas_largo: Number($("#acc_pilas_largo").value),
