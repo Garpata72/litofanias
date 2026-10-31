@@ -30,7 +30,8 @@ sys.path.insert(0, str(BASE))
 
 from litofania.background import subject_mask  # noqa: E402
 from litofania.basrelief import aislar, blur, compress, normalize, shade  # noqa: E402
-from litofania.contours import contour_mask  # noqa: E402
+from litofania.medal import SHAPES, MedalParams  # noqa: E402
+from litofania.medal import build as medal_build  # noqa: E402
 from litofania.shapes import _masked_flat  # noqa: E402
 from litofania.stl import write_stl  # noqa: E402
 from litofania.text import FONT  # noqa: E402
@@ -228,23 +229,18 @@ def relieve(depth: np.ndarray, gray: np.ndarray) -> np.ndarray:
     return compress(depth, depth_px=max(depth.shape) / 8, alpha=4.0, detail=0.15, detail_src=gray)
 
 
-def moneda(rel: np.ndarray, path: Path) -> None:
-    """Moneda de prueba: círculo de 50 mm, base de 2 mm, relieve de 1,6 mm y aro liso de 2,5 mm."""
-    n = int(round(COIN_MM / COIN_PX_MM)) + 1
-    rows, cols = rel.shape
-    side = min(rows, cols)
-    sq = rel[(rows - side) // 2:(rows - side) // 2 + side, (cols - side) // 2:(cols - side) // 2 + side]
-    sq = _resize(sq, (n, n))
-    yy, xx = np.mgrid[0:n, 0:n]
-    r_mm = np.hypot(xx - (n - 1) / 2, yy - (n - 1) / 2) * COIN_PX_MM
-    radius = COIN_MM / 2
-    inner = radius - RIM_MM
-    fade = np.clip((inner - r_mm) / 1.0, 0, 1)                    # el relieve baja en 1 mm antes del aro
-    t = BASE_MM + RELIEF_MM * np.clip(sq, 0, 1) * fade
-    t = np.where(r_mm > inner, BASE_MM + RELIEF_MM + 0.2, t)
-    mask = contour_mask(n, n, "circulo")
+ALTO_FORMA = {"circulo": 1.0, "redondeado": 1.0, "ovalo": 1.3, "escudo": 1.2}      # alto / ancho
+
+
+def moneda(rel: np.ndarray, path: Path, forma: str = "circulo", colgar: bool = False) -> Image.Image:
+    """Moneda de prueba de 50 mm de ancho: base 2 mm, relieve 1,6 mm, aro liso 2,5 mm y, si se pide, pestaña.
+    Guarda el STL y devuelve una vista con luz rasante de la pieza entera."""
+    p = MedalParams(shape=forma, width_mm=COIN_MM, height_mm=COIN_MM * ALTO_FORMA[forma], mm_per_px=COIN_PX_MM,
+                    base_mm=BASE_MM, relief_mm=RELIEF_MM, rim_mm=RIM_MM, tab=(10.0, 4.0) if colgar else None)
+    t, mask, _ = medal_build(rel, p)
     s = _masked_flat(t, COIN_PX_MM, mask)
     write_stl(str(path), s.verts, s.faces)
+    return Image.fromarray(shade(np.where(mask, t, 0.0), COIN_PX_MM))
 
 
 def _font(size: int):
@@ -294,6 +290,7 @@ def mascara(rgb: Image.Image, size: tuple[int, int], cache: dict) -> np.ndarray 
         t = time.perf_counter()
         m = subject_mask(cache[key][0], rgb, size)
         print(f"  fondo... {time.perf_counter() - t:.1f} s ({cache[key][1]})")
+        del cache[key]              # libera la memoria de la gráfica antes de los modelos de profundidad
         return m
     except Exception as e:  # sin máscara se sigue con el fondo, como antes
         print(f"  fondo... ERROR: {type(e).__name__}: {e}"[:200])
@@ -301,7 +298,7 @@ def mascara(rgb: Image.Image, size: tuple[int, int], cache: dict) -> np.ndarray 
 
 
 def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache: dict,
-             quitar_fondo: bool = False) -> list[Resultado]:
+             quitar_fondo: bool = False, forma: str = "circulo", colgar: bool = False) -> list[Resultado]:
     img = ImageOps.exif_transpose(Image.open(foto_path))
     rgb = img.convert("RGB")
     if max(rgb.size) > 4096:
@@ -336,7 +333,7 @@ def procesar(foto_path: Path, metodos: list[str], salida: Path, stl: bool, cache
         rel_img.save(out / f"{m}-relieve.png")
         filas.append((r, dep_img, rel_img))
         if stl:
-            moneda(rel, out / f"{m}-moneda-50mm.stl")
+            moneda(rel, out / f"{m}-moneda-50mm.stl", forma, colgar).save(out / f"{m}-moneda.png")
     hoja(rgb, filas, out / "comparativa.png")
     return resultados
 
@@ -348,6 +345,8 @@ def main() -> int:
     ap.add_argument("--sin-large", action="store_true", help="no probar Depth Anything V2 Large (descarga 1,3 GB)")
     ap.add_argument("--quitar-fondo", action="store_true",
                     help="dejar liso el fondo con BiRefNet lite (descarga 224 MB); mejor para retratos y objetos")
+    ap.add_argument("--forma", choices=SHAPES, default="circulo", help="forma de la moneda de prueba (con --stl)")
+    ap.add_argument("--colgar", action="store_true", help="añadir pestaña con agujero para colgar (con --stl)")
     ap.add_argument("--stl", action="store_true", help="generar una moneda de prueba de 50 mm por método")
     ap.add_argument("--salida", default=str(BASE / "resultados_profundidad"))
     a = ap.parse_args()
@@ -379,7 +378,7 @@ def main() -> int:
     tabla = []
     for foto in fotos:
         print(f"\n{foto.name}")
-        for r in procesar(foto, metodos, salida, a.stl, cache, a.quitar_fondo):
+        for r in procesar(foto, metodos, salida, a.stl, cache, a.quitar_fondo, a.forma, a.colgar):
             tabla.append(f"{foto.name}\t{r.clave}\t{r.dispositivo}\t"
                          f"{'ERROR ' + r.error if r.error else f'{r.calculo_s:.2f}'}\t{r.carga_s:.2f}")
     salida.mkdir(parents=True, exist_ok=True)

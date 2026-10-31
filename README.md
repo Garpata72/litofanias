@@ -83,4 +83,6 @@ Métodos: **Detalle sin IA** (luminancia con contraste local, para monedas o gra
 
 `probar_profundidad.bat` usa `--quitar-fondo`: deja liso el fondo con BiRefNet lite (MIT, 224 MB, también local) para que cortinas, ramas o halos no entren en el relieve. Por línea de comandos es opcional.
 
+Con `--stl` la moneda de prueba puede tener otra forma (`--forma circulo|ovalo|redondeado|escudo`) y pestaña para colgar (`--colgar`); además del STL deja una vista `*-moneda.png` de la pieza entera.
+
 Fotos recomendadas: JPEG de calidad alta o PNG, de 2000 a 4000 px en el lado corto, luz difusa sin sombras duras, motivo nítido ocupando el 60-80 % y fondo liso.
