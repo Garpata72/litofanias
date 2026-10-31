@@ -212,3 +212,12 @@ body.side-hidden #side { display: none; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 #collageList button { background-size: cover; }
+
+/* Modo bajorrelieve: se esconde lo propio de las litofanías y al revés */
+body.modo-relieve [data-modo="lito"] { display: none !important; }
+body:not(.modo-relieve) [data-modo="relieve"] { display: none !important; }
+#modeSeg { margin-left: 1rem; }
+.modelrow { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; font-size: .82rem; }
+.modelrow > span { flex: 1 1 10rem; }
+.modelrow b { color: var(--amber); font-weight: 600; }
+.modelrow small { flex-basis: 100%; color: #f87171; }

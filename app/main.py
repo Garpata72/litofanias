@@ -26,6 +26,10 @@ from litofania.heightmap import FlatParams
 from litofania import printing
 from litofania import text as engraving
 from litofania import accessories
+from litofania import models, relief
+from litofania.basrelief import shade
+from litofania.medal import MedalParams, build as medal_build
+from litofania.shapes import _masked_flat
 from litofania.shapes import SHAPES, Lamp, signed_volume
 from litofania.threemf import read_stl, write_3mf
 from litofania.stl import write_stl
@@ -539,6 +543,141 @@ def download_settings(image_id: str, shape: str) -> FileResponse:
     meta = storage.get_meta(image_id) or {}
     name = Path(meta.get("nombre", image_id)).stem
     return FileResponse(path, media_type="text/plain; charset=utf-8", filename=f"ajustes-{shape}-{name}.txt")
+
+
+
+# ───────── Bajorrelieves (monedas, medallones) ─────────
+
+@app.get("/api/modelos")
+def list_models() -> dict:
+    return {"ort": models.ort_available(), "predeterminado": relief.default_method(),
+            "modelos": [models.state(k) for k in ("large", "small", "birefnet")]}
+
+
+@app.post("/api/modelos/{clave}/instalar")
+def install_model(clave: str) -> dict:
+    if clave not in models.MODELOS or clave == "depthpro":
+        raise HTTPException(404, "Modelo desconocido")
+    if not models.ort_available():
+        raise HTTPException(409, "Falta onnxruntime: ejecuta iniciar.bat de nuevo para instalarlo")
+    models.install_async(clave)
+    return models.state(clave)
+
+
+class ReliefRequest(BaseModel):
+    imagen_id: str
+    metodo: Literal["large", "small", "sin-ia"] = "large"
+    fondo: Literal["auto", "si", "no"] = "auto"
+    forma: Literal["circulo", "ovalo", "redondeado", "escudo"] = "circulo"
+    ancho: float = Field(50.0, ge=20, le=200)
+    alto: float = Field(50.0, ge=20, le=200)
+    base: float = Field(2.0, ge=0.8, le=10)
+    relieve: float = Field(1.6, ge=0.2, le=8)
+    aro: float = Field(2.5, ge=0.0, le=8)
+    campo: float = Field(0.0, ge=0, le=3)
+    compresion: float = Field(4.0, ge=0, le=20)
+    textura: float = Field(0.15, ge=0, le=1)
+    girar: int = 0
+    zoom: float = Field(1.0, ge=1, le=6)
+    centro_x: float = Field(0.5, ge=0, le=1)
+    centro_y: float = Field(0.5, ge=0, le=1)
+    colgar: bool = False
+    colgar_ancho: float = Field(10.0, ge=6, le=30)
+    colgar_agujero: float = Field(4.0, ge=1, le=20)
+    resolucion: float = Field(0.1, ge=0.03, le=0.5)
+
+
+def _relief_name(image_id: str) -> str:
+    return f"{image_id}-relieve"
+
+
+@app.post("/api/bajorrelieves")
+def make_relief(req: ReliefRequest) -> dict:
+    path = storage.image_path(req.imagen_id)
+    if path is None:
+        raise HTTPException(404, "Imagen no encontrada")
+    if req.colgar and req.colgar_agujero > req.colgar_ancho - 2:
+        raise HTTPException(422, "El agujero para colgar debe ser al menos 2 mm más estrecho que la pestaña")
+    height = req.ancho if req.forma == "circulo" else req.alto
+    if min(req.ancho, height) <= 2 * req.aro + 6:
+        raise HTTPException(422, "El aro es demasiado ancho para ese tamaño")
+    try:
+        rm = relief.compute(path, relief.ReliefParams(
+            method=req.metodo, background=req.fondo, aspect=req.ancho / height, rotate=req.girar, zoom=req.zoom,
+            center=(req.centro_x, req.centro_y), compress=req.compresion, detail=req.textura),
+            storage.ROOT / "cache")
+    except FileNotFoundError as e:
+        raise HTTPException(409, str(e))
+    tab = (req.colgar_ancho, req.colgar_agujero) if req.colgar else None
+    name = _relief_name(req.imagen_id)
+    # Resolución final (sin pasar de unos 2 millones de triángulos) y copia ligera para el visor.
+    res = max(req.resolucion, math.sqrt(4 * req.ancho * height / 2_000_000))
+    prev = max(res, math.sqrt(4 * req.ancho * height / PREVIEW_TRIANGLES))
+    base = dict(shape=req.forma, width_mm=req.ancho, height_mm=height, base_mm=req.base, relief_mm=req.relieve,
+                rim_mm=req.aro, dish_mm=req.campo, tab=tab)
+    for suffix, step in (("", res), ("-vista", prev)):
+        t, mask, extra = medal_build(rm.rel, MedalParams(mm_per_px=step, **base))
+        solid = _masked_flat(t, step, mask)
+        write_stl(str(storage.MODELS / f"{name}{suffix}.stl"), solid.verts, solid.faces)
+    size = (req.ancho, height + extra, float(t.max()))
+    volume = signed_volume(solid.verts, solid.faces)
+    (storage.MODELS / f"{name}-ajustes.txt").write_text(
+        printing.relief_settings(req.forma, size, req.base, req.relieve, volume, tab is not None), encoding="utf-8")
+    shown = np.where(mask, t, 0.0)
+    Image.fromarray(np.dstack([shade(shown, prev), mask.astype(np.uint8) * 255]), "RGBA").save(storage.MODELS / f"{name}-vista.png")
+    Image.fromarray((rm.depth * 255).astype(np.uint8)).save(storage.MODELS / f"{name}-profundidad.png")
+    root = f"/api/bajorrelieves/{req.imagen_id}"
+    return {
+        "stl": f"{root}.stl", "vista": f"{root}-vista.stl?v={time.time_ns()}", "tresmf": f"{root}.3mf",
+        "ajustes": f"{root}-ajustes.txt", "luz": f"{root}-vista.png?v={time.time_ns()}",
+        "profundidad": f"{root}-profundidad.png?v={time.time_ns()}",
+        "medidas_mm": [round(v, 1) for v in size], "gramos": round(printing.grams(volume) * 0.8),
+        "nota": rm.note, "dispositivo": rm.device, "segundos": round(rm.seconds, 1),
+        "triangulos": len(solid.faces),
+    }
+
+
+
+def _relief_file(image_id: str, tail: str) -> Path:
+    path = storage.MODELS / f"{_relief_name(image_id)}{tail}"
+    if not image_id.isalnum() or not path.exists():
+        raise HTTPException(404, "Todavía no se ha generado ese bajorrelieve")
+    return path
+
+
+def _relief_title(image_id: str) -> str:
+    return Path((storage.get_meta(image_id) or {}).get("nombre", image_id)).stem
+
+
+@app.get("/api/bajorrelieves/{image_id}.stl")
+def download_relief(image_id: str) -> FileResponse:
+    if image_id.endswith("-vista"):     # la copia ligera del visor
+        return FileResponse(_relief_file(image_id.removesuffix("-vista"), "-vista.stl"), media_type="model/stl")
+    return FileResponse(_relief_file(image_id, ".stl"), media_type="model/stl", filename=f"bajorrelieve-{_relief_title(image_id)}.stl")
+
+
+@app.get("/api/bajorrelieves/{image_id}.3mf")
+def download_relief_3mf(image_id: str) -> FileResponse:
+    verts, faces = read_stl(str(_relief_file(image_id, ".stl")))
+    out = storage.MODELS / f"{_relief_name(image_id)}.3mf"
+    write_3mf(str(out), [(f"bajorrelieve {_relief_title(image_id)}", verts, faces)])
+    return FileResponse(out, media_type="model/3mf", filename=f"bajorrelieve-{_relief_title(image_id)}.3mf")
+
+
+@app.get("/api/bajorrelieves/{image_id}-ajustes.txt")
+def download_relief_settings(image_id: str) -> FileResponse:
+    return FileResponse(_relief_file(image_id, "-ajustes.txt"), media_type="text/plain; charset=utf-8",
+                        filename=f"ajustes-bajorrelieve-{_relief_title(image_id)}.txt")
+
+
+@app.get("/api/bajorrelieves/{image_id}-vista.png")
+def relief_light_png(image_id: str) -> FileResponse:
+    return FileResponse(_relief_file(image_id, "-vista.png"), media_type="image/png")
+
+
+@app.get("/api/bajorrelieves/{image_id}-profundidad.png")
+def relief_depth_png(image_id: str) -> FileResponse:
+    return FileResponse(_relief_file(image_id, "-profundidad.png"), media_type="image/png")
 
 
 @app.get("/api/fuente.ttf")

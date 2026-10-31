@@ -70,6 +70,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+## Bajorrelieves en la app
+
+Arriba, junto al logo, el conmutador **Litofanía / Bajorrelieve** cambia el panel. En Bajorrelieve eliges el método (IA grande, IA pequeña o sin IA), si quitar el fondo (automático, sí, no), la forma (círculo, óvalo, redondeado, escudo), el tamaño, la base, el relieve, el aro liso, el campo cóncavo, la compresión y la textura, el zoom y el centro de la foto y la pestaña para colgar. Los modelos se descargan desde el propio panel (una sola vez, con comprobación SHA-256) y después todo funciona sin internet.
+
+Al generar se abre el visor 3D y salen el STL, el 3MF y el archivo de **ajustes de impresión** para la Ender 3 V3 KE con los nombres de las opciones en Orca Slicer, Bambu Studio y Cura. El mapa de profundidad y la máscara se guardan en `datos/cache`, así que cambiar tamaño, grosor o forma es inmediato. Sin onnxruntime o sin modelos sigue funcionando «Sin IA».
+
 ## Bajorrelieves: prueba de mapas de profundidad (fase 0)
 
 Primer paso para hacer monedas y medallones en relieve a partir de una foto: comparar cómo calcula la profundidad cada método con tus propias fotos, todo en tu ordenador.

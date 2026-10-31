@@ -309,3 +309,21 @@ def test_prism_base(client):
         assert _closed(client.get(r.json()["stl"]).content)
     r = client.post("/api/accesorios", json={"imagen_id": meta["id"], "forma": "cilindro", "tipo": "casquillo"})
     assert r.status_code == 422
+
+
+def test_relief_without_ai(client, tmp_path, monkeypatch):
+    from litofania import models
+    monkeypatch.setattr(models, "MODELOS_DIR", tmp_path / "sin-modelos")
+    meta = client.post("/api/imagenes", files={"archivo": ("foto.png", _png(120, 120), "image/png")}).json()
+    body = {"imagen_id": meta["id"], "metodo": "sin-ia", "fondo": "no", "ancho": 30, "resolucion": 0.3, "colgar": True}
+    r = client.post("/api/bajorrelieves", json=body)
+    assert r.status_code == 200, r.text
+    info = r.json()
+    assert info["medidas_mm"][0] == 30.0 and info["triangulos"] > 1000
+    for key in ("stl", "vista", "tresmf", "ajustes", "luz", "profundidad"):
+        assert client.get(info[key]).status_code == 200, key
+    text = client.get(info["ajustes"]).text
+    assert "Ender 3 V3 KE" in text and "EN CURA" in text and "ORCA" in text
+    assert client.post("/api/bajorrelieves", json={**body, "metodo": "large"}).status_code == 409
+    assert client.get("/api/bajorrelieves/nada.stl").status_code == 404
+    assert client.get("/api/modelos").json()["predeterminado"] in ("sin-ia", "small", "large")

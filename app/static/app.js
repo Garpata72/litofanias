@@ -472,6 +472,7 @@ function select(meta) {
   $("#empty").hidden = true;
   $("#views").hidden = false;
   $("#btnStl").disabled = false;
+  window.Relieve?.onSelect();
   frame = { zoom: 1, cx: 0.5, cy: 0.5, ...(store.get(`encuadre.${meta.id}`) || {}) };
   crop = { x: 0, y: 0, w: 1, h: 1, rot: 0, ...(store.get(`recorte.${meta.id}`) || {}) };
   srcVersion = 0;
