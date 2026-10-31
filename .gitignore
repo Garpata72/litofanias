@@ -3,3 +3,5 @@ __pycache__/
 *.stl
 .venv/
 datos/
+modelos/
+resultados_profundidad/

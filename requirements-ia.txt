@@ -1,0 +1,5 @@
+# Opcional: modelos de IA locales para los bajorrelieves (fase 0: prueba_profundidad.py).
+# En Windows, la versión DirectML usa la tarjeta gráfica (NVIDIA, AMD o Intel) sin instalar CUDA.
+-r requirements.txt
+onnxruntime-directml>=1.18; sys_platform == "win32"
+onnxruntime>=1.18; sys_platform != "win32"
