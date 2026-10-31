@@ -44,5 +44,6 @@ exit /b 0
 :error
 echo.
 echo Algo ha fallado (mira el mensaje de arriba).
+echo Si se repite, envia el archivo resultados_profundidad\errores.txt.
 pause
 exit /b 1

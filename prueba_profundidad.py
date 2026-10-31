@@ -15,9 +15,11 @@ funciona sin internet. Con una tarjeta gráfica en Windows se usa DirectML (onnx
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import hashlib
 import sys
 import time
+import traceback
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -286,14 +288,14 @@ def hoja(foto: Image.Image, filas: list[tuple[Resultado, Image.Image | None, Ima
 
 
 def mascara(rgb: Image.Image, size: tuple[int, int], cache: dict) -> np.ndarray | None:
-    key = ("birefnet", True)
+    """Máscara del motivo con BiRefNet por procesador: va bien y evita mezclar un tercer modelo en la gráfica."""
+    key = ("birefnet", False)
     try:
         if key not in cache:
-            cache[key] = sesion(asegurar_modelo("birefnet"), True)
+            cache[key] = sesion(asegurar_modelo("birefnet"), False)
         t = time.perf_counter()
         m = subject_mask(cache[key][0], rgb, size)
         print(f"  fondo... {time.perf_counter() - t:.1f} s ({cache[key][1]})")
-        del cache[key]              # libera la memoria de la gráfica antes de los modelos de profundidad
         return m
     except Exception as e:  # sin máscara se sigue con el fondo, como antes
         print(f"  fondo... ERROR: {type(e).__name__}: {e}"[:200])
@@ -388,18 +390,35 @@ def main() -> int:
     print("Tarjeta gráfica:", ", ".join(gpu) if gpu else "no disponible, todo irá por el procesador")
 
     salida = Path(a.salida)
+    salida.mkdir(parents=True, exist_ok=True)
+    errores = salida / "errores.txt"
+    errores.write_text("", encoding="utf-8")
+    log = open(errores, "a", encoding="utf-8")
+    faulthandler.enable(file=log)               # si Windows cierra el proceso de golpe, queda aquí dónde fue
     cache: dict = {}
     tabla = []
+    fallos = 0
     for foto in fotos:
-        print(f"\n{foto.name}")
-        for r in procesar(foto, metodos, salida, a.stl, cache, a.fondo, a.forma, a.colgar):
-            tabla.append(f"{foto.name}\t{r.clave}\t{r.dispositivo}\t"
-                         f"{'ERROR ' + r.error if r.error else f'{r.calculo_s:.2f}'}\t{r.carga_s:.2f}")
+        print(f"\n{foto.name}", flush=True)
+        log.write(f"\n== {foto.name}\n")
+        log.flush()
+        try:
+            for r in procesar(foto, metodos, salida, a.stl, cache, a.fondo, a.forma, a.colgar):
+                tabla.append(f"{foto.name}\t{r.clave}\t{r.dispositivo}\t"
+                             f"{'ERROR ' + r.error if r.error else f'{r.calculo_s:.2f}'}\t{r.carga_s:.2f}")
+        except Exception:  # una foto que falla no debe parar las demás
+            fallos += 1
+            texto = traceback.format_exc()
+            print(f"  ERROR con esta foto, sigo con la siguiente:\n{texto}")
+            log.write(texto)
+            log.flush()
     salida.mkdir(parents=True, exist_ok=True)
     (salida / "tiempos.txt").write_text("foto\tmetodo\tdispositivo\tcalculo_s\tcarga_s\n" + "\n".join(tabla) + "\n",
                                         encoding="utf-8")
     print(f"\nListo. Mira las hojas comparativa.png en {salida}")
-    return 0
+    if fallos:
+        print(f"{fallos} foto(s) han fallado: el detalle está en {errores}")
+    return 1 if fallos else 0
 
 
 if __name__ == "__main__":
