@@ -257,6 +257,8 @@ def test_new_accessories_and_3mf(client):
     model = z.read("3D/3dmodel.model").decode()
     assert model.count("<object ") == 4 and "peana" in model and "marco" in model   # litofanía, caja, marco y peana
     assert zipfile.ZipFile(io.BytesIO(client.get(desk["tresmf"]).content)).read("3D/3dmodel.model").decode().count("<object ") == 3
+    tight = acc("plana", holgura_marco=0.05).json()
+    assert tight["piezas"] == 2 and _closed(client.get(tight["stl"]).content)
     slot = acc("plana", montaje="ranura").json()
     assert slot["piezas"] == 1 and _closed(client.get(slot["stl"]).content)
 

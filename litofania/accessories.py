@@ -189,7 +189,7 @@ def _fit_note(wo: float, ho: float) -> list[str]:
 
 def light_box(width: float, height: float, t_max: float, frame: float, depth: float = 30.0,
               clearance: float = 0.4, outline: list | None = None, desk: bool = False,
-              tilt_deg: float = 10.0, mount: str = "marco") -> Accessory:
+              tilt_deg: float = 10.0, mount: str = "marco", fit: float = FIT) -> Accessory:
     """Caja de luz para la plana, tumbada sobre la trasera: x = ancho, y = alto, z = fondo (delante arriba).
 
     `mount` = "marco": bandeja abierta por delante con un repecho donde descansa la litofanía y un marco
@@ -199,7 +199,7 @@ def light_box(width: float, height: float, t_max: float, frame: float, depth: fl
     Con `desk` va acompañada de una peana en la que encaja de pie, inclinada `tilt_deg` grados hacia atrás,
     y el cable sale por la trasera por encima de la peana."""
     if mount == "marco":
-        return _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg)
+        return _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg, fit)
     lip = max(2.5, frame)                        # el marco frontal tapa el marco de la litofanía
     wo = width + clearance + 2 * WALL
     ho = height + clearance + WALL               # por arriba la ranura queda abierta
@@ -234,7 +234,7 @@ def _desk_notes(tilt_deg: float) -> list[str]:
     ]
 
 
-def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg) -> Accessory:
+def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg, fit=FIT) -> Accessory:
     """Caja de luz de dos piezas: bandeja con repecho + marco frontal extraíble (ver `light_box`)."""
     lip = max(2.5, frame)                        # anchura del repecho y del borde del marco
     c = clearance                                # holgura por lado de la litofanía en su alojamiento
@@ -251,17 +251,17 @@ def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, til
     cable_y = WALL + (22 if desk else 3)
     tray -= _box(wo / 2 - cw / 2, cable_y, -1, wo / 2 + cw / 2, cable_y + ch, WALL + 1)
     ox, oy = WALL + c, WALL + c
-    cover = _box(WALL + FIT, WALL + FIT, 0, wo - WALL - FIT, ho - WALL - FIT, FRAME_T)
+    cover = _box(WALL + fit, WALL + fit, 0, wo - WALL - fit, ho - WALL - fit, FRAME_T)
     cover -= _window(outline, width, height, ox, oy, lip).extrude(FRAME_T + 2).translate((0, 0, -1))
     notes = [
         "Caja de luz de dos piezas para la litofanía plana: la bandeja y el marco frontal que se quita y se pone.",
         "Bandeja: imprímela tal como sale, tumbada sobre la trasera, sin soportes ni puentes.",
         "Marco: imprímelo apoyado por la cara lisa (tal como sale), sin soportes. Encaja a presión.",
-        f"Montaje: pon la litofanía en el alojamiento (holgura {c:.1f} mm por lado),,",
+        f"Montaje: pon la litofanía en el alojamiento (holgura {c:.1f} mm por lado),",
         "y presiona el marco encima. Para sacarlo, mete la uña en la muesca de arriba.",
         f"Cámara de luz de {depth:.0f} mm de fondo: pega una tira LED USB de 5 V (blanco cálido) en la trasera,",
         "por dentro, y saca el cable por el agujero de atrás.",
-        f"Si el marco queda flojo, pega una tira fina de cinta en su canto; si no entra, líjalo (holgura {FIT:.2f} mm).",
+        f"Si el marco queda flojo, pega una tira fina de cinta en su canto; si no entra, líjalo (holgura {fit:.2f} mm por lado; se cambia en «Holgura del marco»).",
     ] + _fit_note(wo, ho)
     extra = [("marco", cover)]
     if desk:
