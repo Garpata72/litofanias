@@ -4,3 +4,6 @@ fastapi>=0.115
 uvicorn>=0.30
 python-multipart>=0.0.9
 manifold3d>=3.0
+# Bajorrelieves: la IA local corre con ONNX Runtime. En Windows, DirectML usa la grafica sin instalar CUDA.
+onnxruntime-directml>=1.18; sys_platform == "win32"
+onnxruntime>=1.18; sys_platform != "win32"
