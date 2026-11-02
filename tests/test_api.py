@@ -259,6 +259,11 @@ def test_new_accessories_and_3mf(client):
     assert zipfile.ZipFile(io.BytesIO(client.get(desk["tresmf"]).content)).read("3D/3dmodel.model").decode().count("<object ") == 3
     tight = acc("plana", holgura_marco=0.05).json()
     assert tight["piezas"] == 2 and _closed(client.get(tight["stl"]).content)
+    for kw in ({}, {"escritorio": True}, {"iman_diametro": 8, "iman_grosor": 3}):
+        mag = acc("plana", imanes=True, **kw)
+        assert mag.status_code == 200, mag.text
+        assert _closed(client.get(mag.json()["stl"]).content), kw
+        assert "imanes" in client.get(mag.json()["ajustes"]).text
     slot = acc("plana", montaje="ranura").json()
     assert slot["piezas"] == 1 and _closed(client.get(slot["stl"]).content)
 

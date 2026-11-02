@@ -189,17 +189,20 @@ def _fit_note(wo: float, ho: float) -> list[str]:
 
 def light_box(width: float, height: float, t_max: float, frame: float, depth: float = 30.0,
               clearance: float = 0.4, outline: list | None = None, desk: bool = False,
-              tilt_deg: float = 10.0, mount: str = "marco", fit: float = FIT) -> Accessory:
+              tilt_deg: float = 10.0, mount: str = "marco", fit: float = FIT,
+              magnet: tuple[float, float] | None = None) -> Accessory:
     """Caja de luz para la plana, tumbada sobre la trasera: x = ancho, y = alto, z = fondo (delante arriba).
 
     `mount` = "marco": bandeja abierta por delante con un repecho donde descansa la litofanía y un marco
     frontal extraíble (pieza aparte) que la sujeta; nada queda en el aire al imprimir. `mount` = "ranura":
     la litofanía entra por arriba en una ranura tapada por un marco fijo (lleva puentes al imprimir).
 
+    Con `magnet` = (diámetro, grosor) el marco se sujeta con imanes en las esquinas en vez de a presión.
+
     Con `desk` va acompañada de una peana en la que encaja de pie, inclinada `tilt_deg` grados hacia atrás,
     y el cable sale por la trasera por encima de la peana."""
     if mount == "marco":
-        return _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg, fit)
+        return _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg, fit, magnet)
     lip = max(2.5, frame)                        # el marco frontal tapa el marco de la litofanía
     wo = width + clearance + 2 * WALL
     ho = height + clearance + WALL               # por arriba la ranura queda abierta
@@ -234,7 +237,7 @@ def _desk_notes(tilt_deg: float) -> list[str]:
     ]
 
 
-def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg, fit=FIT) -> Accessory:
+def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, tilt_deg, fit=FIT, magnet=None) -> Accessory:
     """Caja de luz de dos piezas: bandeja con repecho + marco frontal extraíble (ver `light_box`)."""
     lip = max(2.5, frame)                        # anchura del repecho y del borde del marco
     c = clearance                                # holgura por lado de la litofanía en su alojamiento
@@ -251,6 +254,8 @@ def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, til
     cable_y = WALL + (22 if desk else 3)
     tray -= _box(wo / 2 - cw / 2, cable_y, -1, wo / 2 + cw / 2, cable_y + ch, WALL + 1)
     ox, oy = WALL + c, WALL + c
+    if magnet:
+        return _magnet_box(tray, wo, ho, do, depth, slot, (width, height), outline, lip, fit, magnet, desk, tilt_deg, clearance, c)
     cover = _box(WALL + fit, WALL + fit, 0, wo - WALL - fit, ho - WALL - fit, FRAME_T)
     cover -= _window(outline, width, height, ox, oy, lip).extrude(FRAME_T + 2).translate((0, 0, -1))
     notes = [
@@ -267,6 +272,52 @@ def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, til
     if desk:
         notes += _desk_notes(tilt_deg)
         extra.append(("peana", desk_stand(wo, do, clearance, tilt_deg)))
+    return _finish("caja", tray, notes, extra)
+
+
+def _magnet_box(tray, wo, ho, do, depth, slot, size, outline, lip, fit, magnet, desk, tilt_deg, clearance, c) -> Accessory:
+    """Caja de luz con el marco sujeto por imanes redondos en las esquinas.
+
+    Cada imán va en un hueco de la bandeja (abierto por delante) y en otro del marco (abierto por detrás),
+    metidos en una columna que sobresale de la esquina y llega hasta el fondo, así no hay nada en el aire.
+    El marco es una placa que apoya sobre el borde de la bandeja, con un tapón que entra en el alojamiento
+    y lo centra. Con `desk` solo lleva los dos imanes de arriba."""
+    md, mt = magnet
+    pocket_r = (md + 0.3) / 2                      # 0,15 mm de holgura por lado para el imán
+    boss_r = pocket_r + 1.2
+    off = max(0.0, (pocket_r + 1.0) / math.sqrt(2) - WALL)    # centro del hueco, hacia fuera de la esquina
+    ext = off + boss_r
+    plate_t = mt + 1.2
+    centers = [(-off, ho + off), (wo + off, ho + off)] + ([] if desk else [(-off, -off), (wo + off, -off)])
+    pocket = mt + 0.3
+    for x, y in centers:
+        tray += _cyl(boss_r, 0, do).translate((x, y, 0))
+    for x, y in centers:
+        tray -= _cyl(pocket_r, do - pocket, do + 1).translate((x, y, 0))
+    ox, oy = WALL + c, WALL + c
+    cover = _box(0, 0, 0, wo, ho, plate_t)
+    for x, y in centers:
+        cover += _cyl(boss_r, 0, plate_t).translate((x, y, 0))
+    cover += _box(WALL + fit, WALL + fit, plate_t - 0.01, wo - WALL - fit, ho - WALL - fit, plate_t + FRAME_T)
+    cover -= _window(outline, size[0], size[1], ox, oy, lip).extrude(plate_t + FRAME_T + 2).translate((0, 0, -1))
+    for x, y in centers:
+        cover -= _cyl(pocket_r, plate_t - pocket, plate_t + 1).translate((x, y, 0))
+    n = len(centers)
+    notes = [
+        "Caja de luz de dos piezas para la litofanía plana: la bandeja y un marco frontal que se sujeta con imanes.",
+        "Bandeja: imprímela tal como sale, tumbada sobre la trasera, sin soportes ni puentes.",
+        f"Marco: imprímelo apoyado por la cara lisa (tal como sale), sin soportes. Lleva un tapón por detrás que lo centra.",
+        f"Imanes: {n} de {md:.0f} mm de diámetro y {mt:.1f} mm de grosor, en los huecos de las esquinas (hueco de {2 * pocket_r:.1f} mm).",
+        "Pon primero los de la bandeja con un punto de pegamento y apoya cada imán del marco sobre su pareja:",
+        "comprueba que se atraen antes de pegarlos (si uno se repele, dale la vuelta) y deja el marco para el final.",
+        f"Montaje: pon la litofanía en el alojamiento (holgura {c:.1f} mm por lado) y acerca el marco: los imanes lo sujetan.",
+        f"Cámara de luz de {depth:.0f} mm de fondo: pega una tira LED USB de 5 V (blanco cálido) en la trasera,",
+        "por dentro, y saca el cable por el agujero de atrás.",
+    ] + _fit_note(wo + 2 * ext, ho + 2 * ext)
+    extra = [("marco", cover)]
+    if desk:
+        notes += _desk_notes(tilt_deg)
+        extra.append(("peana", desk_stand(wo + 2 * ext, do, clearance, tilt_deg)))
     return _finish("caja", tray, notes, extra)
 
 

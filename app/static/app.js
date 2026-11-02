@@ -94,6 +94,9 @@ function showShapeFields() {
   $$("[data-acc]").forEach((el) => { if (el.dataset.acc !== accTipo) el.hidden = true; });
   $$("[data-desk]").forEach((el) => (el.hidden = forma !== "plana" || !$("#acc_escritorio").checked));
   $$("[data-bat]").forEach((el) => { if (!$("#acc_pilas").checked) el.hidden = true; });
+  const slotted = $("#acc_montaje").value === "ranura";
+  $$("[data-frame]").forEach((el) => { if (slotted) el.hidden = true; });
+  $$("[data-mag]").forEach((el) => { if (!$("#acc_imanes").checked) el.hidden = true; });
   // Caja de caras: se da el ancho de cada cara en vez del diámetro.
   const faces = forma === "cilindro" && Number($("#caras").value) > 0;
   $("#ancho").closest("label").hidden = forma === "cilindro" ? !faces : !["plana", "arco"].includes(forma);
@@ -1013,6 +1016,8 @@ async function generateAccessory() {
     const info = await (await api("POST", "/api/accesorios", {
       imagen_id: current.id, forma,
       fondo: Number($("#acc_fondo").value), alto: Number($("#acc_alto").value), holgura: Number($("#acc_holgura").value), holgura_marco: Number($("#acc_holgura_marco").value),
+      imanes: $("#acc_imanes").checked && $("#acc_montaje").value === "marco",
+      iman_diametro: Number($("#acc_iman_diametro").value), iman_grosor: Number($("#acc_iman_grosor").value),
       tipo: $("#acc_tipo").value, casquillo: Number($("#acc_casquillo").value),
       montaje: $("#acc_montaje").value, escritorio: $("#acc_escritorio").checked, inclinacion: Number($("#acc_inclinacion").value),
       pilas: $("#acc_pilas").checked, pilas_largo: Number($("#acc_pilas_largo").value),
@@ -1036,7 +1041,7 @@ async function generateAccessory() {
   }
 }
 $("#btnAcc").addEventListener("click", generateAccessory);
-for (const id of ["#acc_tipo", "#acc_escritorio", "#acc_pilas"]) $(id).addEventListener("input", showShapeFields);
+for (const id of ["#acc_tipo", "#acc_escritorio", "#acc_pilas", "#acc_montaje", "#acc_imanes"]) $(id).addEventListener("input", showShapeFields);
 
 /* ───────── Generar STL y verlo en 3D ───────── */
 async function generate() {

@@ -403,6 +403,9 @@ class AccessoryRequest(BaseModel):
     inclinacion: float = Field(10.0, ge=0, le=25)   # inclinación hacia atrás en la peana
     alto: float = Field(25.0, ge=12, le=60)         # bases: altura
     holgura: float = Field(0.4, ge=0.1, le=1.0)
+    imanes: bool = False                            # caja de luz: marco sujeto por imanes en las esquinas
+    iman_diametro: float = Field(10.0, ge=4, le=20)
+    iman_grosor: float = Field(2.0, ge=1, le=6)
     holgura_marco: float = Field(accessories.FIT, ge=0.0, le=0.5)   # caja de luz: holgura por lado del marco extraíble
     pilas: bool = False                             # bases y peana: hueco para el portapilas
     pilas_largo: float = Field(accessories.BATTERY[0], ge=20, le=150)
@@ -429,7 +432,8 @@ def make_accessory(req: AccessoryRequest) -> dict:
     wall = m.get("pared_mm", t)
     try:
         if req.forma == "plana":
-            a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"), req.escritorio, req.inclinacion, req.montaje, req.holgura_marco)
+            a = accessories.light_box(w, h, t, m["marco"], req.fondo, c, m.get("contorno"), req.escritorio, req.inclinacion, req.montaje, req.holgura_marco,
+                                    (req.iman_diametro, req.iman_grosor) if req.imanes else None)
         elif req.forma == "arco":
             a = accessories.arc_base(m["radio_mm"], m["angulo"], t, req.alto, c)
         elif req.forma == "esfera":
