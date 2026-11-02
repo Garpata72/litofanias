@@ -242,20 +242,27 @@ def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, til
     lip = max(2.5, frame)                        # anchura del repecho y del borde del marco
     c = clearance                                # holgura por lado de la litofanía en su alojamiento
     rw, rh = width + 2 * c, height + 2 * c
-    wo, ho = rw + 2 * WALL, rh + 2 * WALL
+    pocket_r = (magnet[0] + 0.3) / 2 if magnet else 0.0      # 0,15 mm de holgura por lado para el imán
+    # Con imanes el borde de la caja se ensancha lo justo para que quepan dentro de las esquinas, sin salirse del
+    # rectángulo: 1 mm de pared por fuera y por dentro del hueco.
+    rim = max(WALL, (pocket_r + 1.0) * (1 + 1 / math.sqrt(2))) if magnet else WALL
+    wo, ho = rw + 2 * rim, rh + 2 * rim
     slot = t_max + 0.3                           # hueco entre repecho y marco para la litofanía
     rebate = slot + FRAME_T                      # el marco queda enrasado con el borde de la bandeja
     do = WALL + depth + rebate
     tray = _box(0, 0, 0, wo, ho, do)
-    tray -= _box(WALL + lip, WALL + lip, WALL, wo - WALL - lip, ho - WALL - lip, WALL + depth + 0.01)   # cámara
-    tray -= _box(WALL, WALL, WALL + depth, wo - WALL, ho - WALL, do + 1)                                # alojamiento
-    tray -= _cyl(6.0, do - FRAME_T - 0.5, do + 1).translate((wo / 2, ho, 0))     # muesca para sacar el marco con la uña
+    tray -= _box(rim + lip, rim + lip, WALL, wo - rim - lip, ho - rim - lip, WALL + depth + 0.01)   # cámara
+    tray -= _box(rim, rim, WALL + depth, wo - rim, ho - rim, do + 1)                                # alojamiento
+    if not magnet:
+        tray -= _cyl(6.0, do - FRAME_T - 0.5, do + 1).translate((wo / 2, ho, 0))     # muesca para sacar el marco con la uña
     cw, ch = CABLE
     cable_y = WALL + (22 if desk else 3)
-    tray -= _box(wo / 2 - cw / 2, cable_y, -1, wo / 2 + cw / 2, cable_y + ch, WALL + 1)
-    ox, oy = WALL + c, WALL + c
     if magnet:
-        return _magnet_box(tray, wo, ho, do, depth, slot, (width, height), outline, lip, fit, magnet, desk, tilt_deg, clearance, c)
+        cable_y = max(rim + lip + 0.5, cable_y)                                   # que caiga dentro de la cámara
+    tray -= _box(wo / 2 - cw / 2, cable_y, -1, wo / 2 + cw / 2, cable_y + ch, WALL + 1)
+    ox, oy = rim + c, rim + c
+    if magnet:
+        return _magnet_box(tray, wo, ho, rim, do, depth, (width, height), outline, lip, fit, magnet, desk, tilt_deg, clearance, c)
     cover = _box(WALL + fit, WALL + fit, 0, wo - WALL - fit, ho - WALL - fit, FRAME_T)
     cover -= _window(outline, width, height, ox, oy, lip).extrude(FRAME_T + 2).translate((0, 0, -1))
     notes = [
@@ -275,49 +282,42 @@ def _frame_box(width, height, t_max, frame, depth, clearance, outline, desk, til
     return _finish("caja", tray, notes, extra)
 
 
-def _magnet_box(tray, wo, ho, do, depth, slot, size, outline, lip, fit, magnet, desk, tilt_deg, clearance, c) -> Accessory:
-    """Caja de luz con el marco sujeto por imanes redondos en las esquinas.
+def _magnet_box(tray, wo, ho, rim, do, depth, size, outline, lip, fit, magnet, desk, tilt_deg, clearance, c) -> Accessory:
+    """Caja de luz con el marco sujeto por cuatro imanes redondos metidos en las esquinas del borde.
 
-    Cada imán va en un hueco de la bandeja (abierto por delante) y en otro del marco (abierto por detrás),
-    metidos en una columna que sobresale de la esquina y llega hasta el fondo, así no hay nada en el aire.
-    El marco es una placa que apoya sobre el borde de la bandeja, con un tapón que entra en el alojamiento
-    y lo centra. Con `desk` solo lleva los dos imanes de arriba."""
+    Cada imán va en un hueco de la bandeja (abierto por delante) y en otro del marco (abierto por detrás). La caja
+    sigue siendo un rectángulo: lo que crece es el borde (`rim`) que rodea el alojamiento. El marco es una placa
+    del tamaño de la caja que apoya en su borde, con un tapón que entra en el alojamiento y lo centra."""
     md, mt = magnet
-    pocket_r = (md + 0.3) / 2                      # 0,15 mm de holgura por lado para el imán
-    boss_r = pocket_r + 1.2
-    off = max(0.0, (pocket_r + 1.0) / math.sqrt(2) - WALL)    # centro del hueco, hacia fuera de la esquina
-    ext = off + boss_r
+    pocket_r = (md + 0.3) / 2
+    q = pocket_r + 1.0                                # centro del hueco, medido desde los dos bordes de la esquina
     plate_t = mt + 1.2
-    centers = [(-off, ho + off), (wo + off, ho + off)] + ([] if desk else [(-off, -off), (wo + off, -off)])
     pocket = mt + 0.3
-    for x, y in centers:
-        tray += _cyl(boss_r, 0, do).translate((x, y, 0))
+    centers = [(q, q), (wo - q, q), (q, ho - q), (wo - q, ho - q)]
     for x, y in centers:
         tray -= _cyl(pocket_r, do - pocket, do + 1).translate((x, y, 0))
-    ox, oy = WALL + c, WALL + c
+    ox, oy = rim + c, rim + c
     cover = _box(0, 0, 0, wo, ho, plate_t)
-    for x, y in centers:
-        cover += _cyl(boss_r, 0, plate_t).translate((x, y, 0))
-    cover += _box(WALL + fit, WALL + fit, plate_t - 0.01, wo - WALL - fit, ho - WALL - fit, plate_t + FRAME_T)
+    cover += _box(rim + fit, rim + fit, plate_t - 0.01, wo - rim - fit, ho - rim - fit, plate_t + FRAME_T)
     cover -= _window(outline, size[0], size[1], ox, oy, lip).extrude(plate_t + FRAME_T + 2).translate((0, 0, -1))
     for x, y in centers:
         cover -= _cyl(pocket_r, plate_t - pocket, plate_t + 1).translate((x, y, 0))
-    n = len(centers)
     notes = [
         "Caja de luz de dos piezas para la litofanía plana: la bandeja y un marco frontal que se sujeta con imanes.",
         "Bandeja: imprímela tal como sale, tumbada sobre la trasera, sin soportes ni puentes.",
-        f"Marco: imprímelo apoyado por la cara lisa (tal como sale), sin soportes. Lleva un tapón por detrás que lo centra.",
-        f"Imanes: {n} de {md:.0f} mm de diámetro y {mt:.1f} mm de grosor, en los huecos de las esquinas (hueco de {2 * pocket_r:.1f} mm).",
+        "Marco: imprímelo apoyado por la cara lisa (tal como sale), sin soportes. Lleva un tapón por detrás que lo centra.",
+        f"Imanes: 4 de {md:.0f} mm de diámetro y {mt:.1f} mm de grosor, metidos en las esquinas del borde (hueco de {2 * pocket_r:.1f} mm).",
         "Pon primero los de la bandeja con un punto de pegamento y apoya cada imán del marco sobre su pareja:",
         "comprueba que se atraen antes de pegarlos (si uno se repele, dale la vuelta) y deja el marco para el final.",
         f"Montaje: pon la litofanía en el alojamiento (holgura {c:.1f} mm por lado) y acerca el marco: los imanes lo sujetan.",
+        f"El borde de la caja mide {rim:.1f} mm para alojar los imanes; la caja sigue siendo rectangular.",
         f"Cámara de luz de {depth:.0f} mm de fondo: pega una tira LED USB de 5 V (blanco cálido) en la trasera,",
         "por dentro, y saca el cable por el agujero de atrás.",
-    ] + _fit_note(wo + 2 * ext, ho + 2 * ext)
+    ] + _fit_note(wo, ho)
     extra = [("marco", cover)]
     if desk:
         notes += _desk_notes(tilt_deg)
-        extra.append(("peana", desk_stand(wo + 2 * ext, do, clearance, tilt_deg)))
+        extra.append(("peana", desk_stand(wo, do, clearance, tilt_deg)))
     return _finish("caja", tray, notes, extra)
 
 
