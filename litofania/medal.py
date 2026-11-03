@@ -25,7 +25,7 @@ class MedalParams:
     mm_per_px: float = 0.1
     base_mm: float = 2.0
     relief_mm: float = 1.6
-    rim_mm: float = 2.5
+    rim_mm: float = 0.0                        # 0 = sin reborde: el relieve llega a ras del canto, como una moneda real
     fade_mm: float = 1.0                       # el relieve baja hasta 0 en esta distancia antes del aro
     dish_mm: float = 0.0                       # campo ligeramente cóncavo, como las monedas reales
     zoom: float = 1.0                          # >1 acerca la foto
@@ -109,17 +109,19 @@ def build(rel: np.ndarray, p: MedalParams) -> tuple[np.ndarray, np.ndarray, floa
     cols = int(round(p.width_mm / p.mm_per_px)) + 1
     rows = int(round(p.height_mm / p.mm_per_px)) + 1
     mask = shape_mask(p.shape, rows, cols)
-    top = p.base_mm + p.relief_mm + RIM_OVER
+    top = p.base_mm + p.relief_mm + (RIM_OVER if p.rim_mm > 0 else 0.0)
     photo = fit_photo(rel, rows, cols, p.zoom, p.center)
 
-    d_mm = distance_inside(mask, (p.rim_mm + p.fade_mm) / p.mm_per_px + 1) * p.mm_per_px
-    fade = np.clip((d_mm - p.rim_mm) / max(p.fade_mm, 1e-6), 0.0, 1.0)
+    fade_mm = p.fade_mm if p.rim_mm > 0 else 0.0
+    d_mm = distance_inside(mask, (p.rim_mm + fade_mm) / p.mm_per_px + 1) * p.mm_per_px if p.rim_mm > 0 else np.where(mask, 1e3, 0.0)
+    fade = np.clip((d_mm - p.rim_mm) / max(fade_mm, 1e-6), 0.0, 1.0)
     t = p.base_mm + p.relief_mm * photo * fade
     if p.dish_mm > 0:
         far = distance_inside(mask, min(rows, cols) / 2 + 1) * p.mm_per_px
         rho = 1.0 - np.clip(far / max(far.max(), 1e-6), 0.0, 1.0)
         t = t - p.dish_mm * (1.0 - rho**2) * fade
-    t = np.where(d_mm <= p.rim_mm, top, t)
+    if p.rim_mm > 0:
+        t = np.where(d_mm <= p.rim_mm, top, t)
 
     extra = 0.0
     if p.tab is not None:

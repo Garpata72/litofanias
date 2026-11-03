@@ -47,3 +47,11 @@ def test_pestana_para_colgar_anade_altura_y_sigue_cerrada():
     t, mask, extra = build(np.full((60, 60), 0.5), p)
     assert extra > 7.5
     assert _closed(medal(np.full((60, 60), 0.5), p).faces)
+
+
+def test_medalla_sin_reborde_llega_a_ras():
+    rel = np.ones((60, 60))
+    t, mask, _ = build(rel, MedalParams(width_mm=20, height_mm=20, mm_per_px=0.25, base_mm=1.5, relief_mm=1.0))
+    assert t[mask].max() <= 2.5 + 1e-6          # nada por encima de base + relieve
+    edge = mask & ~np.pad(mask, 1)[2:, 1:-1] | mask & ~np.pad(mask, 1)[:-2, 1:-1]
+    assert np.isclose(t[edge], 2.5).all()       # el relieve sigue hasta el canto

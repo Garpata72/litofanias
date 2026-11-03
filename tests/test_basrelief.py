@@ -62,3 +62,14 @@ def test_motivo_claro_frente_a_panel_de_figuras():
     assert not dominant(varios)[0]
     assert not dominant(np.ones((200, 150)))[0]
     assert not dominant(np.zeros((200, 150)))[0]
+
+
+def test_sharpen_realza_el_detalle_y_respeta_el_rango():
+    from litofania.basrelief import blur, sharpen
+    rng = np.random.default_rng(1)
+    rel = np.clip(blur(rng.random((200, 200)), 2.0) * 6 - 2.0, 0, 1)
+    out = sharpen(rel, 0.5)
+    assert out.min() >= 0 and out.max() <= 1
+    hf = lambda a: np.abs(a - blur(a, 2.0)).mean()
+    assert hf(out) > hf(rel)
+    assert np.array_equal(sharpen(rel, 0), rel)

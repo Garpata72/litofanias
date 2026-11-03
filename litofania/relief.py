@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from litofania import background, depth, models
-from litofania.basrelief import aislar, compress
+from litofania.basrelief import aislar, compress, sharpen
 from litofania.heightmap import ROTATIONS, crop_window
 from litofania.medal import MedalParams
 
@@ -22,7 +22,7 @@ BACKGROUND = ("auto", "si", "no")
 
 @dataclass
 class ReliefParams:
-    method: str = "large"          # large | small | sin-ia
+    method: str = "large"          # da3l | da3 | large | small | sin-ia
     background: str = "auto"       # auto | si | no
     aspect: float = 1.0            # ancho / alto de la pieza
     rotate: int = 0
@@ -30,6 +30,7 @@ class ReliefParams:
     center: tuple[float, float] = (0.5, 0.5)
     compress: float = 4.0
     detail: float = 0.15
+    sharpen: float = 0.3           # nitidez del relieve (0..1): realza el detalle fino que la IA suaviza
 
 
 @dataclass
@@ -44,7 +45,7 @@ class ReliefMap:
 
 def default_method() -> str:
     if models.ort_available():
-        for key in ("large", "small"):
+        for key in ("large", "da3", "small"):
             if models.installed(key):
                 return key
     return "sin-ia"
@@ -115,6 +116,7 @@ def compute(path: Path, p: ReliefParams, cache_dir: Path) -> ReliefMap:
         note = "no se ha podido quitar el fondo: falta el modelo (BiRefNet)"
 
     rel = compress(d, depth_px=max(d.shape) / 8, alpha=p.compress, detail=p.detail, detail_src=gray)
+    rel = sharpen(rel, p.sharpen)
     if mask is not None:
         rel = aislar(rel, mask)
     return ReliefMap(rel, d, mask, note, dev["device"], time.perf_counter() - t0)

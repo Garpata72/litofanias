@@ -1,13 +1,13 @@
 /* Bajorrelieves: moneda o medallón a partir de la foto abierta. Usa $, $$, api, toast, store, current y crop de app.js. */
 const Relieve = (() => {
-  const FIELDS = ["r_metodo", "r_fondo", "r_forma", "r_ancho", "r_alto", "r_base", "r_relieve", "r_aro", "r_campo", "r_compresion", "r_textura",
+  const FIELDS = ["r_metodo", "r_fondo", "r_forma", "r_ancho", "r_alto", "r_base", "r_relieve", "r_aro", "r_campo", "r_compresion", "r_textura", "r_nitidez",
     "r_zoom", "r_cx", "r_cy", "r_colgar", "r_colgar_ancho", "r_colgar_agujero", "r_resolucion"];
   let on = false, models = null, poll = null;
 
   const read = (id) => { const e = $(`#${id}`); return e.type === "checkbox" ? e.checked : e.type === "range" || e.type === "number" ? Number(e.value) : e.value; };
-  const save = () => store.set("relieve", Object.fromEntries(FIELDS.map((id) => [id, read(id)])));
+  const save = () => store.set("relieve2", Object.fromEntries(FIELDS.map((id) => [id, read(id)])));
   function restore() {
-    const saved = store.get("relieve") || {};
+    const saved = store.get("relieve2") || {};
     for (const id of FIELDS) if (id in saved) { const e = $(`#${id}`); if (e.type === "checkbox") e.checked = !!saved[id]; else e.value = saved[id]; }
   }
 
@@ -67,7 +67,7 @@ const Relieve = (() => {
     box.append(hint);
     const sel = $("#r_metodo");
     const have = (k) => models.modelos.find((m) => m.clave === k)?.instalado;
-    if (!store.get("relieve")?.r_metodo) sel.value = models.predeterminado;
+    if (!store.get("relieve2")?.r_metodo) sel.value = models.predeterminado;
     if (sel.value !== "sin-ia" && !have(sel.value)) sel.title = "Este modelo aún no está descargado";
     else sel.title = "";
   }
@@ -84,7 +84,7 @@ const Relieve = (() => {
       const info = await (await api("POST", "/api/bajorrelieves", {
         imagen_id: current.id, metodo: read("r_metodo"), fondo: read("r_fondo"), forma: read("r_forma"),
         ancho: read("r_ancho"), alto: circle ? read("r_ancho") : read("r_alto"), base: read("r_base"), relieve: read("r_relieve"),
-        aro: read("r_aro"), campo: read("r_campo"), compresion: read("r_compresion"), textura: read("r_textura"),
+        aro: read("r_aro"), campo: read("r_campo"), compresion: read("r_compresion"), textura: read("r_textura"), nitidez: read("r_nitidez"),
         girar: crop.rot, zoom: read("r_zoom"), centro_x: read("r_cx"), centro_y: read("r_cy"),
         colgar: read("r_colgar"), colgar_ancho: read("r_colgar_ancho"), colgar_agujero: read("r_colgar_agujero"), resolucion: read("r_resolucion"),
       })).json();

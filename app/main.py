@@ -556,7 +556,7 @@ def download_settings(image_id: str, shape: str) -> FileResponse:
 @app.get("/api/modelos")
 def list_models() -> dict:
     return {"ort": models.ort_available(), "predeterminado": relief.default_method(),
-            "modelos": [models.state(k) for k in ("large", "small", "birefnet")]}
+            "modelos": [models.state(k) for k in ("large", "da3", "da3l", "small", "birefnet")]}
 
 
 @app.post("/api/modelos/{clave}/instalar")
@@ -571,17 +571,18 @@ def install_model(clave: str) -> dict:
 
 class ReliefRequest(BaseModel):
     imagen_id: str
-    metodo: Literal["large", "small", "sin-ia"] = "large"
+    metodo: Literal["large", "da3", "da3l", "small", "sin-ia"] = "large"
     fondo: Literal["auto", "si", "no"] = "auto"
     forma: Literal["circulo", "ovalo", "redondeado", "escudo"] = "circulo"
     ancho: float = Field(50.0, ge=20, le=200)
     alto: float = Field(50.0, ge=20, le=200)
     base: float = Field(2.0, ge=0.8, le=10)
     relieve: float = Field(1.6, ge=0.2, le=8)
-    aro: float = Field(2.5, ge=0.0, le=8)
+    aro: float = Field(0.0, ge=0.0, le=8)
     campo: float = Field(0.0, ge=0, le=3)
     compresion: float = Field(4.0, ge=0, le=20)
     textura: float = Field(0.15, ge=0, le=1)
+    nitidez: float = Field(0.3, ge=0, le=1)
     girar: int = 0
     zoom: float = Field(1.0, ge=1, le=6)
     centro_x: float = Field(0.5, ge=0, le=1)
@@ -604,12 +605,12 @@ def make_relief(req: ReliefRequest) -> dict:
     if req.colgar and req.colgar_agujero > req.colgar_ancho - 2:
         raise HTTPException(422, "El agujero para colgar debe ser al menos 2 mm más estrecho que la pestaña")
     height = req.ancho if req.forma == "circulo" else req.alto
-    if min(req.ancho, height) <= 2 * req.aro + 6:
+    if req.aro > 0 and min(req.ancho, height) <= 2 * req.aro + 6:
         raise HTTPException(422, "El aro es demasiado ancho para ese tamaño")
     try:
         rm = relief.compute(path, relief.ReliefParams(
             method=req.metodo, background=req.fondo, aspect=req.ancho / height, rotate=req.girar, zoom=req.zoom,
-            center=(req.centro_x, req.centro_y), compress=req.compresion, detail=req.textura),
+            center=(req.centro_x, req.centro_y), compress=req.compresion, detail=req.textura, sharpen=req.nitidez),
             storage.ROOT / "cache")
     except FileNotFoundError as e:
         raise HTTPException(409, str(e))

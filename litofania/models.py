@@ -27,6 +27,7 @@ class Modelo:
     mb: int
     licencia: str
     uso: str                 # "profundidad" o "fondo": de cada uso se mantiene un solo modelo cargado en la app
+    extra: tuple = ()        # archivos que van con el modelo: (archivo, url, sha256); ONNX los busca junto a él
 
 
 MODELOS = {
@@ -37,6 +38,17 @@ MODELOS = {
                     f"{HF}/depth-anything-v2-large/resolve/main/onnx/model.onnx",
                     "a93aa89b5e92e30e0afbe0f7c3ec692b35cfca791ae9004a190fb0ca2010e905", 1337, "CC-BY-NC-4.0 (uso personal)",
                     "profundidad"),
+    "da3": Modelo("da3", "Depth Anything V3 Base", "da3-base/model.onnx",
+                  f"{HF}/depth-anything-v3-base/resolve/main/onnx/model.onnx",
+                  "d9e7775d8b0340ce9416cfdb4356651ef72abab75eb1485f0aeefa352d78255c", 412, "Apache-2.0", "profundidad",
+                  (("da3-base/model.onnx_data", f"{HF}/depth-anything-v3-base/resolve/main/onnx/model.onnx_data",
+                    "09de4dcff3fefe48b04fedbf146151f3339e6115416a72bf9b36dee3aafd03bd"),)),
+    "da3l": Modelo("da3l", "Depth Anything V3 Large", "da3-large/model.onnx",
+                   f"{HF}/depth-anything-v3-large/resolve/main/onnx/model.onnx",
+                   "2c02d70b301b4b51c357e7f04c371e27b5d4a5520a0ef11b8c657627e86b4a7e", 1382, "Apache-2.0 (según su ficha)",
+                   "profundidad",
+                   (("da3-large/model.onnx_data", f"{HF}/depth-anything-v3-large/resolve/main/onnx/model.onnx_data",
+                     "3aee647d45b208cbff14f4a738737a4bd9f9e5fbce2c48e7a6db311ea807060c"),)),
     "depthpro": Modelo("depthpro", "Apple Depth Pro (q4f16)", "dp-q4f16.onnx",
                        f"{HF}/DepthPro-ONNX/resolve/main/onnx/model_q4f16.onnx",
                        "714842d1e17986a6ae6bac18a7c66bd6e041aa88acf714e7b494a206cce5c2dc", 600, "Apple ML Research (uso personal)",
@@ -51,8 +63,14 @@ def path(clave: str) -> Path:
     return MODELOS_DIR / MODELOS[clave].archivo
 
 
+def files(clave: str) -> list[tuple[Path, str, str]]:
+    """Archivos del modelo: (destino, url, sha256)."""
+    m = MODELOS[clave]
+    return [(path(clave), m.url, m.sha256)] + [(MODELOS_DIR / a, u, h) for a, u, h in m.extra]
+
+
 def installed(clave: str) -> bool:
-    return path(clave).exists()
+    return all(f.exists() for f, _, _ in files(clave))
 
 
 def sha256(p: Path) -> str:
@@ -70,26 +88,25 @@ _LOCK = threading.Lock()
 
 
 def install(clave: str, progress=None) -> Path:
-    """Descarga el modelo (si falta) y comprueba que el archivo es el esperado. Bloquea hasta terminar."""
+    """Descarga el modelo (si falta) y comprueba que los archivos son los esperados. Bloquea hasta terminar."""
     m = MODELOS[clave]
-    dest = path(clave)
-    if dest.exists():
-        return dest
-    MODELOS_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(".parcial")
-    with urllib.request.urlopen(m.url) as r, open(tmp, "wb") as f:
-        total = int(r.headers.get("Content-Length") or 0)
-        done = 0
-        while chunk := r.read(1 << 20):
-            f.write(chunk)
-            done += len(chunk)
-            if progress:
-                progress(done, total)
-    if sha256(tmp) != m.sha256:
-        tmp.unlink()
-        raise RuntimeError(f"El archivo descargado de {m.nombre} no coincide (SHA-256). Vuelve a intentarlo.")
-    tmp.replace(dest)
-    return dest
+    done = 0
+    for dest, url, sha in files(clave):
+        if dest.exists():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(dest.suffix + ".parcial")
+        with urllib.request.urlopen(url) as r, open(tmp, "wb") as f:
+            while chunk := r.read(1 << 20):
+                f.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done, 0)
+        if sha256(tmp) != sha:
+            tmp.unlink()
+            raise RuntimeError(f"El archivo descargado de {m.nombre} no coincide (SHA-256). Vuelve a intentarlo.")
+        tmp.replace(dest)
+    return path(clave)
 
 
 def install_async(clave: str) -> bool:
