@@ -251,7 +251,7 @@ def relief_settings(shape: str, size_mm: tuple[float, float, float], base_mm: fl
         *_slicer_blocks(rows),
         "ORIENTACIÓN",
         "- Imprímela tumbada, tal como sale del STL: cara trasera plana sobre la cama y el relieve hacia arriba.",
-        "- Sin soportes: el relieve crece de capa en capa y el aro de los bordes es vertical.",
+        "- Sin soportes: el relieve crece de capa en capa y el canto es vertical.",
         *(["- La pestaña para colgar va en el mismo plano: no necesita nada especial."] if tab else []),
         "",
         "PARA SACAR MÁS DETALLE",

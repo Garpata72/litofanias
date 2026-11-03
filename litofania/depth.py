@@ -11,7 +11,7 @@ from PIL import Image
 from litofania import models
 from litofania.basrelief import blur, normalize
 
-METHODS = ("large", "small", "sin-ia")      # de más a menos calidad; el primero instalado es el que se propone
+METHODS = ("da3l", "da3", "large", "small", "sin-ia")      # de más a menos calidad; el primero instalado es el que se propone
 
 
 def resize(a: np.ndarray, size: tuple[int, int]) -> np.ndarray:
@@ -29,6 +29,19 @@ def da2(s, rgb: Image.Image, short: int = 518, max_long: int = 2016) -> np.ndarr
     x = (x - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
     x = x.transpose(2, 0, 1)[None].astype(np.float32)
     return s.run(None, {s.get_inputs()[0].name: x})[0][0]
+
+
+def da3(s, rgb: Image.Image, short: int = 518, max_long: int = 2016) -> np.ndarray:
+    """Depth Anything V3: igual de entrada que V2 pero con tensor de 5 dimensiones; da profundidad (lejos = alto) y se invierte."""
+    w, h = rgb.size
+    k = short / min(w, h)
+    if max(w, h) * k > max_long:
+        k = max_long / max(w, h)
+    nw, nh = max(14, round(w * k / 14) * 14), max(14, round(h * k / 14) * 14)
+    x = np.asarray(rgb.resize((nw, nh), Image.Resampling.BICUBIC), dtype=np.float32) / 255.0
+    x = ((x - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]).transpose(2, 0, 1)[None, None].astype(np.float32)
+    d = s.run(["predicted_depth"], {"pixel_values": x})[0][0, 0]
+    return 1.0 / np.maximum(d, 1e-3)
 
 
 def depthpro(s, rgb: Image.Image) -> np.ndarray:
@@ -50,6 +63,8 @@ def sin_ia(gray: np.ndarray) -> np.ndarray:
 
 
 def _run(clave: str, s, rgb: Image.Image) -> np.ndarray:
+    if clave in ("da3", "da3l"):
+        return da3(s, rgb)
     return depthpro(s, rgb) if clave == "depthpro" else da2(s, rgb)
 
 

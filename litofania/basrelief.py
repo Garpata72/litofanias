@@ -81,6 +81,16 @@ def compress(depth: np.ndarray, depth_px: float = 60.0, alpha: float = 4.0, cut:
     return rel
 
 
+def sharpen(rel: np.ndarray, amount: float) -> np.ndarray:
+    """Realza el detalle fino del relieve (ojos, pelo, grabados) con dos máscaras de nitidez, una fina y otra media.
+    Trabaja a la resolución de trabajo (800 px); `amount` 0 lo deja igual."""
+    if amount <= 0:
+        return rel
+    k = max(rel.shape) / 800
+    out = rel + amount * (1.2 * (rel - blur(rel, 1.2 * k)) + 0.8 * (rel - blur(rel, 4.0 * k)))
+    return np.clip(out, 0.0, 1.0)
+
+
 def shade(height_mm: np.ndarray, mm_per_px: float, azimuth_deg: float = 135.0, elevation_deg: float = 30.0,
           tint: tuple[float, float, float] = (0.86, 0.68, 0.42)) -> np.ndarray:
     """Imagen RGB 0..255 del relieve iluminado con luz rasante (por defecto desde arriba a la izquierda)."""
