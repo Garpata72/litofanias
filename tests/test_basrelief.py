@@ -73,3 +73,17 @@ def test_sharpen_realza_el_detalle_y_respeta_el_rango():
     hf = lambda a: np.abs(a - blur(a, 2.0)).mean()
     assert hf(out) > hf(rel)
     assert np.array_equal(sharpen(rel, 0), rel)
+
+
+def test_volumen_devuelve_forma_global(tmp_path):
+    from PIL import Image
+    from litofania import relief
+    y, x = np.mgrid[:200, :200]
+    img = (255 * np.exp(-((x - 100) ** 2 + (y - 100) ** 2) / 2500)).astype(np.uint8)   # un cerro suave
+    Image.fromarray(img).convert("RGB").save(tmp_path / "f.png")
+    flat = relief.compute(tmp_path / "f.png", relief.ReliefParams(method="sin-ia", background="no", volume=0.0, sharpen=0), tmp_path)
+    full = relief.compute(tmp_path / "f.png", relief.ReliefParams(method="sin-ia", background="no", volume=1.0, sharpen=0), tmp_path)
+    assert 0 <= full.rel.min() and full.rel.max() <= 1
+    coarse = blur(full.depth, 8)
+    corr = lambda a: np.corrcoef(a.ravel(), coarse.ravel())[0, 1]
+    assert corr(full.rel) >= corr(flat.rel)

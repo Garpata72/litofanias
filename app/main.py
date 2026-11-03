@@ -583,6 +583,7 @@ class ReliefRequest(BaseModel):
     compresion: float = Field(4.0, ge=0, le=20)
     textura: float = Field(0.15, ge=0, le=1)
     nitidez: float = Field(0.3, ge=0, le=1)
+    volumen: float = Field(0.4, ge=0, le=1)
     girar: int = 0
     zoom: float = Field(1.0, ge=1, le=6)
     centro_x: float = Field(0.5, ge=0, le=1)
@@ -610,7 +611,7 @@ def make_relief(req: ReliefRequest) -> dict:
     try:
         rm = relief.compute(path, relief.ReliefParams(
             method=req.metodo, background=req.fondo, aspect=req.ancho / height, rotate=req.girar, zoom=req.zoom,
-            center=(req.centro_x, req.centro_y), compress=req.compresion, detail=req.textura, sharpen=req.nitidez),
+            center=(req.centro_x, req.centro_y), compress=req.compresion, detail=req.textura, sharpen=req.nitidez, volume=req.volumen),
             storage.ROOT / "cache")
     except FileNotFoundError as e:
         raise HTTPException(409, str(e))

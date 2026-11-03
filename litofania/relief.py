@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from litofania import background, depth, models
-from litofania.basrelief import aislar, compress, sharpen
+from litofania.basrelief import aislar, blur, compress, normalize, sharpen
 from litofania.heightmap import ROTATIONS, crop_window
 from litofania.medal import MedalParams
 
@@ -30,6 +30,7 @@ class ReliefParams:
     center: tuple[float, float] = (0.5, 0.5)
     compress: float = 4.0
     detail: float = 0.15
+    volume: float = 0.4            # parte de la forma global (nariz, mejillas) que se conserva sin comprimir (0..1)
     sharpen: float = 0.3           # nitidez del relieve (0..1): realza el detalle fino que la IA suaviza
 
 
@@ -98,7 +99,7 @@ def compute(path: Path, p: ReliefParams, cache_dir: Path) -> ReliefMap:
     def make_depth():
         d, dev["device"], _, _ = depth.estimate(method, img, gray, size)
         return d
-    d = _cached(cache_dir / f"{_key(path, p, 'depth', method)}.npy", make_depth)
+    d = _cached(cache_dir / f"{_key(path, p, 'depth2', method)}.npy", make_depth)
 
     mask, note = None, ""
     if p.background != "no" and models.ort_available() and models.installed("birefnet"):
@@ -116,6 +117,9 @@ def compute(path: Path, p: ReliefParams, cache_dir: Path) -> ReliefMap:
         note = "no se ha podido quitar el fondo: falta el modelo (BiRefNet)"
 
     rel = compress(d, depth_px=max(d.shape) / 8, alpha=p.compress, detail=p.detail, detail_src=gray)
+    if p.volume > 0:      # devuelve parte del volumen que la compresión se come: la forma suave de la profundidad
+        coarse = blur(d, max(d.shape) / 100)
+        rel = normalize(rel + p.volume * normalize(coarse, 0.5, 99.5), 0.2, 99.8)
     rel = sharpen(rel, p.sharpen)
     if mask is not None:
         rel = aislar(rel, mask)
