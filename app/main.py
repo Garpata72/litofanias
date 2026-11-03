@@ -26,7 +26,7 @@ from litofania.heightmap import FlatParams
 from litofania import printing
 from litofania import text as engraving
 from litofania import accessories
-from litofania import models, relief
+from litofania import marigold, models, relief
 from litofania.basrelief import shade
 from litofania.medal import MedalParams, build as medal_build
 from litofania.shapes import _masked_flat
@@ -556,6 +556,7 @@ def download_settings(image_id: str, shape: str) -> FileResponse:
 @app.get("/api/modelos")
 def list_models() -> dict:
     return {"ort": models.ort_available(), "predeterminado": relief.default_method(),
+            "marigold": marigold.available(),
             "modelos": [models.state(k) for k in ("large", "da3", "da3l", "small", "birefnet")]}
 
 
@@ -571,7 +572,7 @@ def install_model(clave: str) -> dict:
 
 class ReliefRequest(BaseModel):
     imagen_id: str
-    metodo: Literal["large", "da3", "da3l", "small", "sin-ia"] = "da3"
+    metodo: Literal["marigold", "large", "da3", "da3l", "small", "sin-ia"] = "da3"
     fondo: Literal["auto", "si", "no"] = "auto"
     forma: Literal["circulo", "ovalo", "redondeado", "escudo"] = "circulo"
     ancho: float = Field(50.0, ge=20, le=200)
@@ -615,6 +616,8 @@ def make_relief(req: ReliefRequest) -> dict:
             storage.ROOT / "cache")
     except FileNotFoundError as e:
         raise HTTPException(409, str(e))
+    except RuntimeError as e:      # Marigold ha fallado en su proceso aparte
+        raise HTTPException(500, str(e))
     tab = (req.colgar_ancho, req.colgar_agujero) if req.colgar else None
     name = _relief_name(req.imagen_id)
     # Resolución final (sin pasar de unos 2 millones de triángulos) y copia ligera para el visor.

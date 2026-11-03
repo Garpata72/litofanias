@@ -41,6 +41,10 @@ const Relieve = (() => {
     const box = $("#modelBox");
     if (!models.ort) { box.innerHTML = '<p class="hint">Falta onnxruntime: cierra la app y vuelve a abrirla con iniciar.bat para instalarlo. Mientras, solo funciona «Sin IA».</p>'; return; }
     box.innerHTML = "";
+    const mg = document.createElement("div");
+    mg.className = "modelrow";
+    mg.innerHTML = `<span>Marigold · 2,6 GB (necesita PyTorch)</span>${models.marigold ? "<b>✓ instalado</b>" : "<small>Ejecuta instalar_marigold.bat una vez</small>"}`;
+    box.append(mg);
     for (const m of models.modelos) {
       const row = document.createElement("div");
       row.className = "modelrow";
@@ -66,8 +70,9 @@ const Relieve = (() => {
     hint.textContent = "Se descargan una sola vez; después todo funciona sin internet. El grande es para uso personal (CC-BY-NC).";
     box.append(hint);
     const sel = $("#r_metodo");
-    const have = (k) => models.modelos.find((m) => m.clave === k)?.instalado;
+    const have = (k) => (k === "marigold" ? models.marigold : models.modelos.find((m) => m.clave === k)?.instalado);
     if (!store.get("relieve3")?.r_metodo) sel.value = models.predeterminado;
+    else if (models.marigold && !store.get("relieve3").marigold_visto) { sel.value = "marigold"; store.set("relieve3", { ...store.get("relieve3"), r_metodo: "marigold", marigold_visto: true }); }
     if (sel.value !== "sin-ia" && !have(sel.value)) sel.title = "Este modelo aún no está descargado";
     else sel.title = "";
   }

@@ -333,4 +333,4 @@ def test_relief_without_ai(client, tmp_path, monkeypatch):
     assert "Ender 3 V3 KE" in text and "EN CURA" in text and "ORCA" in text
     assert client.post("/api/bajorrelieves", json={**body, "metodo": "large"}).status_code == 409
     assert client.get("/api/bajorrelieves/nada.stl").status_code == 404
-    assert client.get("/api/modelos").json()["predeterminado"] in ("sin-ia", "small", "large")
+    assert client.get("/api/modelos").json()["predeterminado"] in ("sin-ia", "small", "large", "da3", "marigold")
