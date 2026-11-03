@@ -571,7 +571,7 @@ def install_model(clave: str) -> dict:
 
 class ReliefRequest(BaseModel):
     imagen_id: str
-    metodo: Literal["large", "da3", "da3l", "small", "sin-ia"] = "large"
+    metodo: Literal["large", "da3", "da3l", "small", "sin-ia"] = "da3"
     fondo: Literal["auto", "si", "no"] = "auto"
     forma: Literal["circulo", "ovalo", "redondeado", "escudo"] = "circulo"
     ancho: float = Field(50.0, ge=20, le=200)

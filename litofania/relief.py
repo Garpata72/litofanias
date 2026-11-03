@@ -45,7 +45,7 @@ class ReliefMap:
 
 def default_method() -> str:
     if models.ort_available():
-        for key in ("large", "da3", "small"):
+        for key in ("da3", "large", "small"):
             if models.installed(key):
                 return key
     return "sin-ia"
