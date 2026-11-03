@@ -1,0 +1,7 @@
+# Marigold (profundidad por difusion): entorno aparte, .venv-marigold, para no cargar la app con PyTorch.
+# PyTorch con CUDA (cu126, con cu121 o cu118 de respaldo; funciona en la GTX 1060); lo instala probar_marigold.bat desde su propio indice.
+-r requirements-ia.txt
+diffusers>=0.32
+transformers>=4.44
+accelerate>=0.33
+scipy>=1.10

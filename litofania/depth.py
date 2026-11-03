@@ -88,7 +88,7 @@ def estimate(clave: str, rgb: Image.Image, gray: np.ndarray, size: tuple[int, in
                 _run(clave, s, rgb.resize((140, 140)))
             t = time.perf_counter()
             d = resize(_run(clave, s, rgb), size)
-            return normalize(d), models.DEVICE_NAMES.get(provider, provider), load, time.perf_counter() - t
+            return normalize(d, 0.5, 99.95), models.DEVICE_NAMES.get(provider, provider), load, time.perf_counter() - t
         except Exception:
             if not use_gpu:
                 raise

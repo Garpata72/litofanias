@@ -92,3 +92,7 @@ Métodos: **Detalle sin IA** (luminancia con contraste local, para monedas o gra
 Con `--stl` la moneda de prueba puede tener otra forma (`--forma circulo|ovalo|redondeado|escudo`) y pestaña para colgar (`--colgar`); además del STL deja una vista `*-moneda.png` de la pieza entera.
 
 Fotos recomendadas: JPEG de calidad alta o PNG, de 2000 a 4000 px en el lado corto, luz difusa sin sombras duras, motivo nítido ocupando el 60-80 % y fondo liso.
+
+## Probar Marigold (opcional)
+
+`probar_marigold.bat` (arrastra fotos o una carpeta) compara Marigold v1.1, un modelo de difusión, con Depth Anything V3. Usa un entorno aparte, `.venv-marigold`, con PyTorch y CUDA (la primera vez instala unos 3 GB y descarga 2,6 GB de modelo) y deja en `resultados_marigold/` una hoja comparativa y una moneda de prueba por método. Marigold v2 no se prueba: está construido sobre Qwen-Image-Edit (más de 20 GB) y no cabe en una tarjeta de 6 GB. En la app, el control **Volumen** del panel de Bajorrelieve conserva parte de la forma global (nariz, mejillas) que la compresión del relieve aplana.
