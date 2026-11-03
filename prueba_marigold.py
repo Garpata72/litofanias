@@ -19,13 +19,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+import marigold_worker
 from litofania import background, depth, models, relief
 from litofania.basrelief import aislar, blur, compress, normalize, shade, sharpen
 from litofania.medal import MedalParams, build as medal_build
 from litofania.shapes import _masked_flat
 from litofania.stl import write_stl
 
-REPO = "prs-eth/marigold-depth-v1-1"
 EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
@@ -39,21 +39,11 @@ def fotos(entradas: list[str]) -> list[Path]:
 
 class Marigold:
     def __init__(self, cpu: bool):
-        import torch
-        from diffusers import MarigoldDepthPipeline
-        self.torch = torch
-        self.dev = "cpu" if cpu or not torch.cuda.is_available() else "cuda"
-        dtype = torch.float16 if self.dev == "cuda" else torch.float32
-        kw = {"variant": "fp16"} if dtype == torch.float16 else {}
-        self.pipe = MarigoldDepthPipeline.from_pretrained(REPO, torch_dtype=dtype, **kw).to(self.dev)
-        self.pipe.set_progress_bar_config(disable=True)
+        self.pipe, self.dev = marigold_worker.load(cpu)
 
     def __call__(self, img: Image.Image, pasos: int, conjunto: int, res: int, size: tuple[int, int]) -> np.ndarray:
-        with self.torch.no_grad():
-            out = self.pipe(img, num_inference_steps=pasos, ensemble_size=conjunto, processing_resolution=res,
-                            match_input_resolution=True, output_type="np")
-        d = np.asarray(out.prediction[0, ..., 0], dtype=np.float32)       # 0 = cerca, 1 = lejos
-        return normalize(depth.resize(1.0 - d, size))                     # aquí, cerca = alto
+        d = marigold_worker.predict(self.pipe, img, pasos, conjunto, res)
+        return normalize(depth.resize(d, size), 0.5, 99.95)
 
 
 def relieve(d: np.ndarray, gray: np.ndarray, mask: np.ndarray | None) -> np.ndarray:

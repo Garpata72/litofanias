@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 
-from litofania import background, depth, models
+from litofania import background, depth, marigold, models
 from litofania.basrelief import aislar, blur, compress, normalize, sharpen
 from litofania.heightmap import ROTATIONS, crop_window
 from litofania.medal import MedalParams
@@ -45,6 +45,8 @@ class ReliefMap:
 
 
 def default_method() -> str:
+    if marigold.available():
+        return "marigold"
     if models.ort_available():
         for key in ("da3", "large", "small"):
             if models.installed(key):
@@ -88,7 +90,10 @@ def compute(path: Path, p: ReliefParams, cache_dir: Path) -> ReliefMap:
     import time
     t0 = time.perf_counter()
     method = p.method
-    if method != "sin-ia" and not (models.ort_available() and models.installed(method)):
+    if method == "marigold":
+        if not marigold.available():
+            raise FileNotFoundError("Falta Marigold: ejecuta instalar_marigold.bat una vez o elige otro método")
+    elif method != "sin-ia" and not (models.ort_available() and models.installed(method)):
         raise FileNotFoundError("Falta el modelo de profundidad: instálalo en el panel o elige «Sin IA»")
     img = _crop(path, p)
     size = img.size

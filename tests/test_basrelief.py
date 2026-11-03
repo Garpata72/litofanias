@@ -87,3 +87,19 @@ def test_volumen_devuelve_forma_global(tmp_path):
     coarse = blur(full.depth, 8)
     corr = lambda a: np.corrcoef(a.ravel(), coarse.ravel())[0, 1]
     assert corr(full.rel) >= corr(flat.rel)
+
+
+def test_marigold_en_proceso_aparte(tmp_path, monkeypatch):
+    import sys
+    from PIL import Image
+    from litofania import depth, marigold
+    stub = tmp_path / "worker.py"
+    stub.write_text("import sys, numpy as np\nnp.save(sys.argv[2], np.tile(np.linspace(0, 1, 40, dtype='float32'), (30, 1)))\nprint('cuda')\n")
+    monkeypatch.setenv("LITOFANIAS_MARIGOLD", sys.executable)
+    monkeypatch.setattr(marigold, "WORKER", stub)
+    assert marigold.available()
+    img = Image.new("RGB", (80, 60), (120, 120, 120))
+    d, device, _, _ = depth.estimate("marigold", img, np.zeros((60, 80), dtype=np.float32), (80, 60))
+    assert d.shape == (60, 80) and device.startswith("gráfica") and 0 <= d.min() and d.max() <= 1
+    monkeypatch.setattr(marigold, "WORKER", tmp_path / "no-existe.py")
+    assert not marigold.available()

@@ -8,10 +8,10 @@ import time
 import numpy as np
 from PIL import Image
 
-from litofania import models
+from litofania import marigold, models
 from litofania.basrelief import blur, normalize
 
-METHODS = ("da3l", "da3", "large", "small", "sin-ia")      # de más a menos calidad; el primero instalado es el que se propone
+METHODS = ("marigold", "da3l", "da3", "large", "small", "sin-ia")      # de más a menos calidad; el primero instalado es el que se propone
 
 
 def resize(a: np.ndarray, size: tuple[int, int]) -> np.ndarray:
@@ -77,6 +77,10 @@ def estimate(clave: str, rgb: Image.Image, gray: np.ndarray, size: tuple[int, in
         t = time.perf_counter()
         d = normalize(resize(sin_ia(gray), size))
         return d, "procesador", 0.0, time.perf_counter() - t
+    if clave == "marigold":
+        t = time.perf_counter()
+        d, device = marigold.run(rgb)
+        return normalize(resize(d, size), 0.5, 99.95), device, 0.0, time.perf_counter() - t
     if not models.installed(clave):
         raise FileNotFoundError(f"Falta el modelo {models.MODELOS[clave].nombre}")
     t = time.perf_counter()
