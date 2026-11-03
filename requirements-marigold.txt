@@ -4,3 +4,4 @@
 diffusers>=0.32
 transformers>=4.44
 accelerate>=0.33
+scipy>=1.10
