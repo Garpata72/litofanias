@@ -12,7 +12,7 @@ const Color = (() => {
   ];
   const DEF_FILS = [["negro", "#1b1b1b", 0.5], ["marrón", "#a0602e", 1.6], ["blanco", "#f2eee4", 3.0]];
   const FIELDS = ["c_ancho", "c_contorno", "c_borde", "c_borde_alto", "c_peso", "c_capas", "c_contraste", "c_auto", "c_capa", "c_primera", "c_base", "c_resolucion",
-    "p_forma", "p_tamano", "p_esquinas", "p_modo", "p_colores", "p_motivo", "p_texto2", "p_texto3", "p_texto_mm", "p_mascara2", "p_mascara3", "p_motivo_mm",
+    "p_forma", "p_tamano", "p_esquinas", "p_modo", "p_colores", "p_motivo", "p_texto2", "p_texto3", "p_texto_mm", "p_mascara2", "p_mascara3", "p_motivo_mm", "p_ajuste", "p_giro", "p_dx", "p_dy",
     "p_grosor", "p_margen", "p_alto2", "p_alto3", "p_borde", "p_borde_alto", "p_incrustacion"];
   let on = false, tipo = "foto";
   let fils = DEF_FILS.map(([nombre, color, td]) => ({ nombre, color, td }));
@@ -22,10 +22,11 @@ const Color = (() => {
   let pix = null;             // la foto a la resolución de la vista previa: { w, h, lab, key }
   let lastKey = "", startsKey = "";
   let coasterGeo = null, coasterTimer = null, timer = null, masks = [];
+  let svgs = [], svgMaps = {};   // SVG subidos y, por cada uno, qué color del SVG va a qué color del posavasos
 
   const read = (id) => { const e = $(`#${id}`); return e.type === "checkbox" ? e.checked : e.type === "range" || e.type === "number" ? Number(e.value) : e.value; };
   function save() {
-    store.set("color1", { campos: Object.fromEntries(FIELDS.map((id) => [id, read(id)])), fils, pal, tipo, starts, shade, resin });
+    store.set("color1", { campos: Object.fromEntries(FIELDS.map((id) => [id, read(id)])), fils, pal, tipo, starts, shade, resin, svgMaps });
   }
   function restore() {
     const s = store.get("color1");
@@ -37,6 +38,7 @@ const Color = (() => {
     if (Array.isArray(s.fils) && s.fils.length >= 2) fils = s.fils.slice(0, MAX_FILS);
     if (Array.isArray(s.pal) && s.pal.length === 3) pal = s.pal;
     tipo = s.tipo === "posavasos" ? "posavasos" : "foto";
+    svgMaps = s.svgMaps || {};
     starts = Array.isArray(s.starts) ? s.starts : null;
     shade = s.shade !== false; resin = !!s.resin;
   }
@@ -368,6 +370,36 @@ const Color = (() => {
       sel.value = masks.some((m) => m.id === was) ? was : "";
     }
   }
+  /* ───────── SVG del motivo ───────── */
+  const svgCurrent = () => svgs.find((m) => m.id === read("p_svg"));
+  async function loadSvgs(select) {
+    try { svgs = await (await api("GET", "/api/svgs")).json(); } catch { svgs = []; }
+    const sel = $("#p_svg"), was = select || sel.value || store.get("color1")?.campos?.p_svg || "";
+    sel.innerHTML = `<option value="">Elige un SVG</option>` + svgs.map((m) => `<option value="${m.id}">${m.nombre}</option>`).join("");
+    sel.value = svgs.some((m) => m.id === was) ? was : "";
+    drawSvgColors();
+  }
+  function svgMapOf(m) {
+    if (!m) return null;
+    const saved = svgMaps[m.id] || {};
+    return Object.fromEntries(m.colores.map((c) => [c.color, c.color in saved ? saved[c.color] : c.asignado]));
+  }
+  function drawSvgColors() {
+    const box = $("#p_svg_colores"), m = svgCurrent();
+    box.innerHTML = "";
+    $("#p_svg_avisos").textContent = m ? m.avisos.join(" ") : "";
+    if (!m) return;
+    const map = svgMapOf(m);
+    m.colores.forEach((c) => {
+      const row = document.createElement("label");
+      row.className = "filrow svgc";
+      row.innerHTML = `<i class="sw" style="background:${c.color}"></i><span>${c.color} · ${String(c.area).replace(".", ",")} %</span><select><option value="0">Ignorar</option><option value="2">Color 2 (motivo)</option><option value="3">Color 3 (detalle)</option></select>`;
+      const sel = row.querySelector("select");
+      sel.value = String(map[c.color]);
+      sel.addEventListener("change", () => { svgMaps[m.id] = { ...svgMapOf(m), [c.color]: Number(sel.value) }; save(); render(); });
+      box.append(row);
+    });
+  }
   function coasterBody() {
     const n = Number(read("p_colores"));
     return {
@@ -376,6 +408,7 @@ const Color = (() => {
       alto3: read("p_alto3"), borde: read("p_borde"), borde_alto: read("p_borde_alto"), motivo: read("p_motivo"),
       texto2: read("p_texto2"), texto3: read("p_texto3"), texto_mm: read("p_texto_mm"),
       mascara2_id: read("p_mascara2") || null, mascara3_id: read("p_mascara3") || null, motivo_mm: read("p_motivo_mm"),
+      svg_id: read("p_svg") || null, svg_mapa: svgMapOf(svgCurrent()), ajuste: read("p_ajuste"), motivo_giro: read("p_giro"), motivo_dx: read("p_dx"), motivo_dy: read("p_dy"),
       paleta: pal.map((p) => p.color), nombres: pal.map((p) => p.nombre),
     };
   }
@@ -406,8 +439,9 @@ const Color = (() => {
       c.save(); c.clip(path(coasterGeo.interior || coasterGeo.contorno), "evenodd"); c.fillStyle = g; c.fillRect(0, 0, S, S); c.restore();
     }
     const changes = rel ? `${n - 1} cambio(s) de filamento, sin capas mixtas` : `incrustado: ${n - 1} cambio(s) en la primera capa; se imprime boca abajo`;
-    $("#colorInfo").textContent = coasterGeo.vacio ? "El motivo está vacío: escribe un texto o elige una silueta." :
-      `${size} mm · ${changes}${coasterGeo.interior ? ". El borde lleva arriba el último color: hace de molde para la resina UV." : "."}`;
+    const lost = coasterGeo.perdido > 0.02 ? ` Se recorta un ${Math.round(coasterGeo.perdido * 100)} % del motivo por salirse del área libre: redúcelo, muévelo o aumenta el tamaño.` : "";
+    $("#colorInfo").textContent = coasterGeo.vacio ? "El motivo está vacío: escribe un texto, elige una silueta o un SVG." :
+      `${size} mm · ${changes}${coasterGeo.interior ? ". El borde lleva arriba el último color: hace de molde para la resina UV." : "."}${lost}`;
     $("#cvStack").hidden = true;
   }
 
@@ -428,7 +462,7 @@ const Color = (() => {
     const rel = read("p_modo") === "relieve", mot = read("p_motivo");
     $$("[data-p-rel]").forEach((e) => (e.hidden = !rel));
     $$("[data-p-inc]").forEach((e) => (e.hidden = rel));
-    $$("[data-p-mot]").forEach((e) => (e.hidden = e.dataset.pMot !== mot));
+    $$("[data-p-mot]").forEach((e) => (e.hidden = !e.dataset.pMot.split(" ").includes(mot)));
     $("[data-p-esq]").hidden = ["redondo", "flor", "gota"].includes(read("p_forma"));
     $$("output[data-for^='c_']").forEach((o) => (o.textContent = Number($(`#${o.dataset.for}`).value).toLocaleString("es-ES")));
     $("#c_sombra").setAttribute("aria-pressed", String(shade));
@@ -509,6 +543,35 @@ const Color = (() => {
         save(); render();
       } catch (err) { toast(err.message, "err"); }
     });
+    $("#p_svg").addEventListener("change", () => { drawSvgColors(); save(); render(); });
+    $("#p_svg_subir").addEventListener("click", () => $("#p_svg_fichero").click());
+    $("#p_svg_fichero").addEventListener("change", async (e) => {
+      const file = e.target.files[0]; e.target.value = "";
+      if (!file) return;
+      const fd = new FormData(); fd.append("archivo", file);
+      try {
+        const m = await (await api("POST", "/api/svgs", fd)).json();
+        await loadSvgs(m.id);
+        save(); render();
+      } catch (err) { toast(err.message, "err"); }
+    });
+    // Arrastrar el motivo SVG en la vista previa
+    const cv = $("#cvColor");
+    let drag = null;
+    cv.addEventListener("pointerdown", (e) => {
+      if (!on || tipo !== "posavasos" || read("p_motivo") !== "svg") return;
+      drag = { x: e.clientX, y: e.clientY, dx: read("p_dx"), dy: read("p_dy") }; cv.setPointerCapture(e.pointerId); cv.style.cursor = "grabbing";
+    });
+    cv.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      const mmPerPx = ((cv.width / (cv.width - 20)) * read("p_tamano")) / cv.getBoundingClientRect().width;   // el lienzo deja 10 px de margen por lado
+      $("#p_dx").value = Math.max(-100, Math.min(100, Math.round((drag.dx + (e.clientX - drag.x) * mmPerPx) * 2) / 2));
+      $("#p_dy").value = Math.max(-100, Math.min(100, Math.round((drag.dy - (e.clientY - drag.y) * mmPerPx) * 2) / 2));
+      render();
+    });
+    const end = () => { if (drag) { drag = null; cv.style.cursor = ""; save(); } };
+    cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
+    loadSvgs();
     loadMasks();
     refresh();
     drawChanges();

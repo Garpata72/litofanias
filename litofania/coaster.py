@@ -18,12 +18,13 @@ Se construye con manifold3d (sin OpenSCAD). Origen: posavasos_multicolor.scad de
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 
 import numpy as np
 from manifold3d import CrossSection, FillRule, JoinType, Manifold, OpType
 
-from litofania import text as engraving
+from litofania import svgmotif, text as engraving
 from litofania.accessories import outline_loops
 from litofania.contours import load_mask
 
@@ -47,13 +48,19 @@ class CoasterParams:
     relief3_mm: float = 0.8          # relieve: alto del detalle (color 3) sobre el color 2
     rim_mm: float = 3.0              # relieve: ancho del borde para la resina (0 = sin borde)
     rim_up_mm: float = 0.6           # relieve: lo que sube el borde por encima del motivo (capa de resina)
-    motif: str = "demo"              # demo | texto | silueta
+    motif: str = "demo"              # demo | texto | silueta | svg
     text2: str = "CASA"
     text3: str = ""
     text_mm: float = 16.0            # alto de las letras
     mask2: str | None = None         # silueta (PNG preparado) del color 2
     mask3: str | None = None         # silueta del color 3
-    motif_mm: float = 0.0            # ancho del motivo de silueta (0 = el máximo que cabe)
+    motif_mm: float = 0.0            # ancho del motivo de silueta o SVG (0 = el máximo que cabe)
+    svg: str | None = None           # archivo SVG del motivo
+    svg_map: dict | None = None      # color del SVG «#rrggbb» → 0 (ignorar), 2 (motivo) o 3 (detalle)
+    fit: str = "encajar"             # SVG: encajar (cabe entero) | rellenar (cubre el área libre y se recorta)
+    rotate: float = 0.0              # SVG: giro en grados
+    dx: float = 0.0                  # SVG: desplazamiento en mm tras encajarlo
+    dy: float = 0.0
 
 
 def snap(v: float, step: float = LAYER) -> float:
@@ -163,11 +170,22 @@ def _centroid(cs: CrossSection) -> tuple[float, float]:
     return (cx / a, cy / a) if a else (0.0, 0.0)
 
 
-def motifs(p: CoasterParams) -> tuple[CrossSection, CrossSection]:
+def motifs(p: CoasterParams, report: dict | None = None) -> tuple[CrossSection, CrossSection]:
     """Regiones de los colores 2 y 3, ya recortadas al contorno interior y sin solaparse con el borde."""
     inner = outline(p, p.margin_mm + (p.rim_mm if p.mode == "relieve" else 0))
     b = inner.bounds()
     room = min(b[2] - b[0], b[3] - b[1])
+    if p.motif == "svg":
+        if not p.svg:
+            return CrossSection(), CrossSection()
+        sv = svgmotif.read_cached(p.svg, os.stat(p.svg).st_mtime)
+        c2, c3 = svgmotif.place(sv, p.svg_map or svgmotif.default_map(sv.areas), inner, _centroid(inner), p.motif_mm,
+                                p.fit, p.rotate, p.dx, p.dy, p.colors)
+        full = (c2 + c3).area()
+        c2, c3 = c2 ^ inner, c3 ^ inner
+        if report is not None and full > 0:     # fracción del motivo que se sale del área libre y se recorta
+            report["perdido"] = max(0.0, 1 - (c2 + c3).area() / full)
+        return c2, c3
     if p.motif == "demo":
         c2, c3 = _flower(room / 92)
     elif p.motif == "texto":

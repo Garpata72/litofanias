@@ -148,3 +148,70 @@ def test_api_coaster_preview(client):
     assert r.status_code == 200
     g = r.json()
     assert g["contorno"] and g["interior"] and g["c2"] and not g["vacio"]
+
+
+SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80">
+ <rect x="0" y="0" width="60" height="60" fill="#ff0000"/>
+ <circle cx="30" cy="30" r="10" fill="#ffffff"/>
+ <path d="M60 10 L90 10 L75 40 Z M70 15 L80 15 L75 25 Z" fill="#0000ff" fill-rule="evenodd"/>
+ <path d="M10 70 C 30 50, 50 90, 90 70" stroke="black" fill="none"/>
+ <text x="5" y="5">hola</text>
+</svg>"""
+
+
+def test_svg_colors_painter_order_and_warnings(tmp_path):
+    from litofania import svgmotif
+    f = tmp_path / "a.svg"
+    f.write_bytes(SVG)
+    r = svgmotif.read(str(f))
+    assert set(r.sections) == {"#ff0000", "#ffffff", "#0000ff"}
+    # el círculo blanco tapa al rectángulo rojo: el rojo visible tiene un agujero
+    assert r.areas["#ff0000"] == pytest.approx(60 * 60 - r.areas["#ffffff"], rel=0.02)
+    assert len(r.warnings) == 2                              # contorno sin relleno y texto
+    m = svgmotif.default_map(r.areas)
+    assert m["#ff0000"] == 0 and m["#0000ff"] == 2          # el rojo ocupa casi todo: se toma por fondo
+
+
+def test_svg_fits_every_shape_and_reports_loss(tmp_path):
+    f = tmp_path / "a.svg"
+    f.write_bytes(SVG)
+    for shape in ("redondo", "triangulo", "gota"):
+        p = coaster.CoasterParams(shape=shape, motif="svg", svg=str(f))
+        rep: dict = {}
+        c2, c3 = coaster.motifs(p, rep)
+        assert not c2.is_empty() and rep["perdido"] < 0.02       # «encajar»: cabe entero
+        inner = coaster.outline(p, p.margin_mm + p.rim_mm)
+        assert ((c2 + c3) - inner).area() < 1e-3 * (c2 + c3).area()
+    p = coaster.CoasterParams(shape="triangulo", motif="svg", svg=str(f), fit="rellenar")
+    rep = {}
+    coaster.motifs(p, rep)
+    assert rep["perdido"] > 0.2                                  # «rellenar» recorta por la forma
+    moved = coaster.CoasterParams(shape="redondo", motif="svg", svg=str(f), dx=20)
+    rep = {}
+    coaster.motifs(moved, rep)
+    assert rep["perdido"] > 0.02                                 # empujado fuera del área libre
+
+
+def test_api_svg_upload_and_coaster(client):
+    r = client.post("/api/svgs", files={"archivo": ("logo.svg", SVG, "image/svg+xml")})
+    assert r.status_code == 200
+    info = r.json()
+    assert info["colores"][0]["color"] == "#ff0000" and info["avisos"]
+    assert client.get(f"/api/svgs/{info['id']}/archivo").status_code == 200
+    assert [m["id"] for m in client.get("/api/svgs").json()] == [info["id"]]
+    body = {"motivo": "svg", "svg_id": info["id"], "forma": "hexagono", "svg_mapa": {"#ff0000": 0, "#0000ff": 2, "#ffffff": 3}}
+    assert info["colores"][0]["asignado"] == 0
+    g = client.post("/api/posavasos/vista", json=body).json()
+    assert not g["vacio"] and g["c2"] and g["c3"]
+    assert client.post("/api/posavasos", json=body).status_code == 200
+    assert client.post("/api/svgs", files={"archivo": ("x.svg", b"hola", "image/svg+xml")}).status_code == 400
+    only_text = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>a</text></svg>'
+    assert client.post("/api/svgs", files={"archivo": ("t.svg", only_text, "image/svg+xml")}).status_code == 422
+    assert client.post("/api/posavasos/vista", json={**body, "svg_id": "noexiste"}).status_code == 404
+
+
+def test_svg_default_map_ignores_dominant_background():
+    from litofania import svgmotif
+    assert svgmotif.default_map({"#111": 80, "#f00": 15, "#0f0": 5}) == {"#111": 0, "#f00": 2, "#0f0": 3}
+    assert svgmotif.default_map({"#111": 50, "#f00": 30, "#0f0": 20}) == {"#111": 2, "#f00": 3, "#0f0": 0}
+    assert svgmotif.default_map({"#111": 100}) == {"#111": 2}

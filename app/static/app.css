@@ -240,3 +240,7 @@ details > label { margin-bottom: .45rem; }
 .modelrow > span { flex: 1 1 10rem; }
 .modelrow b { color: var(--amber); font-weight: 600; }
 .modelrow small { flex-basis: 100%; color: #f87171; }
+.filrow.svgc { grid-template-columns: 1.1rem 1fr 9.5rem; }
+.filrow .sw { display: block; width: 1.1rem; height: 1.1rem; border-radius: 3px; border: 1px solid var(--line); }
+.filrow.svgc select { background: var(--bed); border: 1px solid var(--line); border-radius: var(--r); padding: .2rem .3rem; color: var(--text); font-size: .8rem; }
+body.modo-color.color-pos #cvColor { touch-action: none; }

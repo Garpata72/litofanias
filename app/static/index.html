@@ -147,7 +147,7 @@
         <div id="p_paleta" class="filrows"></div>
         <label class="fsel"><span>Motivo</span>
           <select id="p_motivo" aria-label="Motivo">
-            <option value="demo">Flor de ejemplo</option><option value="texto">Texto</option><option value="silueta">Silueta (máscara subida)</option>
+            <option value="demo">Flor de ejemplo</option><option value="texto">Texto</option><option value="silueta">Silueta (máscara subida)</option><option value="svg">SVG (vector)</option>
           </select></label>
         <label class="textfield" data-p-mot="texto"><span>Texto (color 2)</span><input id="p_texto2" type="text" maxlength="40" value="CASA"></label>
         <label class="textfield" data-p-mot="texto"><span>Texto pequeño (color 3)</span><input id="p_texto3" type="text" maxlength="40" value=""></label>
@@ -156,7 +156,21 @@
         <label class="fsel" data-p-mot="silueta"><span>Silueta del color 3</span><select id="p_mascara3"></select></label>
         <button class="btn small" type="button" id="p_subir" data-p-mot="silueta"><span data-icon="plus"></span> Subir silueta</button>
         <input id="p_fichero" type="file" accept="image/*" hidden>
-        <label class="num" data-p-mot="silueta"><span>Ancho del motivo (0 = máximo)</span><input id="p_motivo_mm" type="number" min="0" max="200" step="1" value="0"><i>mm</i></label>
+        <label class="fsel" data-p-mot="svg"><span>Archivo SVG</span><select id="p_svg"></select></label>
+        <button class="btn small" type="button" id="p_svg_subir" data-p-mot="svg"><span data-icon="plus"></span> Subir SVG</button>
+        <input id="p_svg_fichero" type="file" accept=".svg,image/svg+xml" hidden>
+        <div id="p_svg_colores" class="filrows" data-p-mot="svg"></div>
+        <p id="p_svg_avisos" class="hint" data-p-mot="svg"></p>
+        <label class="fsel" data-p-mot="svg"><span>Ajuste al tamaño</span>
+          <select id="p_ajuste" aria-label="Cómo se acopla el SVG">
+            <option value="encajar">Encajar entero (cabe dentro del margen)</option>
+            <option value="rellenar">Rellenar (cubre y se recorta por la forma)</option>
+          </select></label>
+        <label class="num" data-p-mot="svg"><span>Giro</span><input id="p_giro" type="number" min="-360" max="360" step="5" value="0"><i>°</i></label>
+        <label class="num" data-p-mot="svg"><span>Mover horizontal</span><input id="p_dx" type="number" min="-100" max="100" step="1" value="0"><i>mm</i></label>
+        <label class="num" data-p-mot="svg"><span>Mover vertical</span><input id="p_dy" type="number" min="-100" max="100" step="1" value="0"><i>mm</i></label>
+        <p class="hint" data-p-mot="svg">Puedes arrastrar el motivo en la vista previa. Cada color del SVG se asigna al color 2 (el motivo), al color 3 (el detalle) o se ignora; donde un color tapa a otro se ve lo que se vería en pantalla. Los textos y los contornos sin relleno no se convierten: pásalos a trazados en Inkscape.</p>
+        <label class="num" data-p-mot="silueta svg"><span>Ancho del motivo (0 = máximo)</span><input id="p_motivo_mm" type="number" min="0" max="200" step="1" value="0"><i>mm</i></label>
         <details>
           <summary>Grosores y borde</summary>
           <label class="num"><span>Grosor de la base</span><input id="p_grosor" type="number" min="2" max="10" step="0.2" value="4"><i>mm</i></label>

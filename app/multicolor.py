@@ -10,14 +10,14 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app import storage
 from litofania import coaster as coasters
 from litofania import multicolor as mc
-from litofania import orca
+from litofania import orca, svgmotif
 from litofania.accessories import _mesh
 from litofania.printing_color import coaster_settings, photo_settings
 from litofania.shapes import signed_volume
@@ -168,15 +168,28 @@ class CoasterRequest(BaseModel):
     alto3: float = Field(0.8, ge=0.4, le=4)
     borde: float = Field(3.0, ge=0, le=10)
     borde_alto: float = Field(0.6, ge=0, le=3)
-    motivo: Literal["demo", "texto", "silueta"] = "demo"
+    motivo: Literal["demo", "texto", "silueta", "svg"] = "demo"
     texto2: str = Field("CASA", max_length=40)
     texto3: str = Field("", max_length=40)
     texto_mm: float = Field(16.0, ge=4, le=60)
     mascara2_id: str | None = None
     mascara3_id: str | None = None
     motivo_mm: float = Field(0.0, ge=0, le=200)
+    svg_id: str | None = None
+    svg_mapa: dict[str, Literal[0, 2, 3]] | None = None
+    ajuste: Literal["encajar", "rellenar"] = "encajar"
+    motivo_giro: float = Field(0.0, ge=-360, le=360)
+    motivo_dx: float = Field(0.0, ge=-100, le=100)
+    motivo_dy: float = Field(0.0, ge=-100, le=100)
     paleta: list[str] = Field(["#2B3A55", "#F2C14E", "#E4572E"], min_length=3, max_length=3)
     nombres: list[str] = Field(["fondo", "motivo", "detalle"], min_length=3, max_length=3)
+
+
+# El posavasos no necesita ser macizo como la foto en color (la plantilla trae relleno al 100 %).
+COASTER_PROCESS = {"sparse_infill_density": "20%", "sparse_infill_pattern": "gyroid", "wall_loops": "3",
+                   "top_shell_layers": "5", "bottom_shell_layers": "5",
+                   # Z-hop: al viajar, la boquilla sube por encima del motivo ya impreso en vez de rozarlo.
+                   "z_hop": "0.4", "z_hop_types": "Normal Lift"}
 
 
 def _mask(mid: str | None) -> str | None:
@@ -188,13 +201,23 @@ def _mask(mid: str | None) -> str | None:
     return str(path)
 
 
+def _svg(sid: str | None) -> str | None:
+    if not sid:
+        return None
+    path = storage.svg_path(sid)
+    if path is None:
+        raise HTTPException(404, "SVG no encontrado")
+    return str(path)
+
+
 def _coaster_params(req: CoasterRequest) -> coasters.CoasterParams:
     return coasters.CoasterParams(
         mode=req.modo, colors=req.colores, shape=req.forma, size_mm=req.tamano, corner_mm=req.esquinas,
         thickness_mm=req.grosor, margin_mm=req.margen, inlay_mm=req.incrustacion, relief2_mm=req.alto2,
         relief3_mm=req.alto3, rim_mm=req.borde, rim_up_mm=req.borde_alto, motif=req.motivo, text2=req.texto2,
         text3=req.texto3, text_mm=req.texto_mm, mask2=_mask(req.mascara2_id), mask3=_mask(req.mascara3_id),
-        motif_mm=req.motivo_mm)
+        motif_mm=req.motivo_mm, svg=_svg(req.svg_id) if req.motivo == "svg" else None, svg_map=req.svg_mapa,
+        fit=req.ajuste, rotate=req.motivo_giro, dx=req.motivo_dx, dy=req.motivo_dy)
 
 
 @router.post("/api/posavasos")
@@ -224,10 +247,14 @@ def make_coaster(req: CoasterRequest) -> dict:
             idx = int(name[-1]) - 1
             filcolors[fil - 1] = req.paleta[idx]
             parts.append((f"{name} ({names[idx]})", fil, v, f))
-        orca.write_project(str(out / f"{stem}.3mf"), parts, filcolors, 0.2, c.first_layer, [], "posavasos", _template())
+        # Primera capa lenta: los detalles finos del motivo se pegan mejor a la cama.
+        orca.write_project(str(out / f"{stem}.3mf"), parts, filcolors, 0.2, c.first_layer, [], "posavasos", _template(),
+                           {**COASTER_PROCESS, "initial_layer_speed": "15", "initial_layer_infill_speed": "30"})
     else:
+        rim = req.borde > 0
         orca.write_project(str(out / f"{stem}.3mf"), [("posavasos", 1, whole_v, whole_f)], req.paleta[:n], 0.2, 0.2,
-                           c.changes, "posavasos", _template())
+                           c.changes, "posavasos", _template(),
+                           {**COASTER_PROCESS, **({} if rim else {"ironing_type": "top"})})
     # Vista: una STL por color, con la cara vista hacia arriba.
     views = []
     for name, fil, m in c.parts:
@@ -277,8 +304,56 @@ def coaster_settings_txt(cid: str) -> FileResponse:
 def coaster_preview(req: CoasterRequest) -> dict:
     """Las regiones de cada color, vistas desde arriba (mm, y hacia arriba), para la vista previa al momento."""
     p = _coaster_params(req)
-    c2, c3 = coasters.motifs(p)
+    report: dict = {}
+    try:
+        c2, c3 = coasters.motifs(p, report)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     poly = lambda cs: [[[round(x, 2), round(y, 2)] for x, y in loop] for loop in cs.to_polygons()]
     rim = req.modo == "relieve" and req.borde > 0
     return {"contorno": poly(coasters.outline(p)), "interior": poly(coasters.outline(p, req.borde)) if rim else None,
-            "c2": poly(c2 - c3), "c3": poly(c3), "vacio": c2.is_empty() and c3.is_empty()}
+            "c2": poly(c2 - c3), "c3": poly(c3), "vacio": c2.is_empty() and c3.is_empty(), "perdido": round(report.get("perdido", 0.0), 3)}
+
+
+# ───────── SVG para el motivo del posavasos ─────────
+
+def svg_info(sid: str, nombre: str) -> dict:
+    path = storage.svg_path(sid)
+    sv = svgmotif.read_cached(str(path), path.stat().st_mtime)
+    mapping = svgmotif.default_map(sv.areas)
+    total = sum(sv.areas.values())
+    return {"id": sid, "nombre": nombre, "proporcion": round(sv.width / sv.height, 3), "avisos": sv.warnings,
+            "colores": [{"color": c, "area": round(100 * a / total, 1), "asignado": mapping[c]}
+                        for c, a in sorted(sv.areas.items(), key=lambda kv: -kv[1])]}
+
+
+@router.post("/api/svgs")
+async def upload_svg(archivo: UploadFile) -> dict:
+    data = await archivo.read()
+    if len(data) > svgmotif.MAX_BYTES:
+        raise HTTPException(413, "El SVG pesa más de 5 MB")
+    if b"<svg" not in data[:4096].lower() and b"<svg" not in data.lower():
+        raise HTTPException(400, "El archivo no es un SVG")
+    sid = storage.new_id()
+    path = storage.SVGS / f"{sid}.svg"
+    path.write_bytes(data)
+    try:
+        info = svg_info(sid, archivo.filename or "motivo.svg")
+    except ValueError as e:
+        path.unlink(missing_ok=True)
+        raise HTTPException(422, str(e))
+    storage.save_asset_meta(storage.SVGS, sid, {**info, "creada": time.time()})
+    return info
+
+
+@router.get("/api/svgs")
+def list_svgs() -> list[dict]:
+    return storage.list_assets(storage.SVGS)
+
+
+@router.get("/api/svgs/{sid}/archivo")
+def svg_file(sid: str) -> FileResponse:
+    path = storage.svg_path(sid)
+    if path is None:
+        raise HTTPException(404, "SVG no encontrado")
+    return FileResponse(path, media_type="image/svg+xml")

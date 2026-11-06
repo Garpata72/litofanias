@@ -82,13 +82,18 @@ def _mesh_xml(oid: int, uuid: str, v: np.ndarray, t: np.ndarray) -> str:
 
 def write_project(path: str, parts: list[tuple[str, int, np.ndarray, np.ndarray]], colors: list[str],
                   layer: float, first: float, changes: list[tuple[float, int]] = (), name: str = "modelo",
-                  template: Path | None = None) -> None:
+                  template: Path | None = None, overrides: dict[str, str] | None = None) -> None:
     """parts: [(nombre, filamento 1.., vértices (V,3), triángulos (T,3))], ya colocadas entre sí.
     colors: color «#RRGGBB» de cada filamento (define cuántos hay).
     changes: [(z de arriba de la capa, filamento)]: cambio de filamento al empezar esa capa, como el
-    «Cambiar filamento» de la barra de capas de Orca."""
+    «Cambiar filamento» de la barra de capas de Orca.
+    overrides: opciones del proceso que cambian para esta pieza (relleno, planchado, velocidad de la primera
+    capa…); si en la plantilla la opción es una lista, se repite el valor en cada elemento."""
     zin = zipfile.ZipFile(template or TEMPLATE)
     config = _adjust_config(json.loads(zin.read("Metadata/project_settings.config")), colors, layer, first)
+    for k, v in (overrides or {}).items():
+        old = config.get(k)
+        config[k] = [v] * len(old) if isinstance(old, list) else v
     main = zin.read("3D/3dmodel.model").decode("utf-8")
     # Las etiquetas Application y OrcaSlicer hacen que Orca lo abra como proyecto propio.
     meta = "\n".join(line for line in main.splitlines() if line.strip().startswith("<metadata"))

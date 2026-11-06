@@ -11,6 +11,7 @@ IMAGES = ROOT / "imagenes"
 MODELS = ROOT / "stl"
 MASKS = ROOT / "mascaras"
 TEXTURES = ROOT / "texturas"
+SVGS = ROOT / "svg"
 PRESETS = ROOT / "plantillas.json"
 
 
@@ -19,6 +20,7 @@ def ensure_dirs() -> None:
     MODELS.mkdir(parents=True, exist_ok=True)
     MASKS.mkdir(parents=True, exist_ok=True)
     TEXTURES.mkdir(parents=True, exist_ok=True)
+    SVGS.mkdir(parents=True, exist_ok=True)
 
 
 def new_id() -> str:
@@ -78,3 +80,8 @@ def save_presets(presets: dict[str, dict]) -> None:
     tmp = PRESETS.with_suffix(".tmp")
     tmp.write_text(json.dumps(presets, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(PRESETS)
+
+
+def svg_path(svg_id: str) -> Path | None:
+    path = SVGS / f"{svg_id}.svg"
+    return path if svg_id.isalnum() and path.exists() else None

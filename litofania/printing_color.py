@@ -8,6 +8,26 @@ from litofania.printing import BED, PRINTER, _slicer_blocks, grams
 f1 = lambda v: f"{v:.1f}".replace(".", ",")
 f2 = lambda v: f"{v:.2f}".replace(".", ",")
 
+BED_PREP = [
+    "ANTES DE IMPRIMIR",
+    "- Limpia la cama con alcohol isopropílico de 99 % y un paño de microfibra, y no la toques con los dedos: la grasa",
+    "  despega las líneas finas de la primera capa.",
+    "- Limpia también la punta de la boquilla. El polvo o una gota quemada quedan aplastados bajo la primera capa y",
+    "  emborronan el borde entre colores (se nota mucho entre blanco y negro).",
+    "- Z-hop (la boquilla sube un poco en cada desplazamiento): en el proyecto de Orca va a 0,4 mm para que, al viajar",
+    "  de un sitio a otro, la boquilla pase por encima de lo ya impreso en vez de rozarlo o arrastrar hilos.",
+    "",
+]
+
+TPU = [
+    "VARIANTE FLEXIBLE (TPU o PLA Flex, antideslizante)",
+    "- Funciona bien con extrusor directo como el de la KE y cambios manuales (un AMS no puede con filamento flexible).",
+    "- Boquilla 225 °C, velocidad constante de unos 30-40 mm/s (la KE va mejor despacio con TPU), retracción mínima.",
+    "- Cama a 30 °C: más caliente, el TPU se suelda a la PEI y se rompe la primera capa al despegarlo.",
+    "- Sin planchado (ironing) y sin resina: el TPU se dobla y la resina se agrietaría.",
+    "",
+]
+
 M600 = [
     "CAMBIO DE FILAMENTO EN LA KE (M600)",
     "- En el proyecto de Orca ya está: «G-code de cambio de filamento» = M600 y «Cambio manual de filamento» activado.",
@@ -21,14 +41,16 @@ M600 = [
 RESIN = [
     "ACABADO CON RESINA UV (opcional, protege y da brillo)",
     "Material: resina UV transparente «doming» o de joyería (baja viscosidad, amarillea poco), lámpara UV de 365-405 nm",
-    "(una de uñas de 36-48 W sirve), guantes de nitrilo, gafas, palillos o un palito de mezclar y un mechero o pistola de calor.",
+    "(una de uñas de 36-48 W sirve), guantes de nitrilo, gafas, palillos o un palito de mezclar y un mechero o soplete de llama fina.",
     "1. Deja la pieza 24 h tras imprimir. Límpiala con aire o un pincel; NO uses alcohol isopropílico sobre PLA de colores",
-    "   (puede dejar velos). Quita hilos y rebabas con un cúter.",
+    "   (puede dejar velos). Los hilos se van con una pasada muy rápida de llama fina a unos 10 cm; las rebabas y gotas,",
+    "   con un cortacutículas de acero, al ras (los alicates tiran del plástico y lo blanquean).",
     "2. Pon la pieza perfectamente horizontal (usa un nivel o el móvil) sobre papel de horno o un film, a cubierto del polvo.",
     "3. Capa de sellado: extiende una capa MUY fina con el palillo por toda la cara, metiéndola en las esquinas del relieve.",
     "   Cura 2-3 min bajo la lámpara. Esta capa evita burbujas que salen del relieve en las capas gruesas.",
     "4. Vierte la resina en capas de 1-2 mm como máximo, desde el centro, y llévala al borde con el palillo.",
-    "   Pasa la llama o el aire caliente a 5-10 cm, rápido, para reventar las burbujas. Cura 3-5 min cada capa.",
+    "   Pasa la llama a unos 10 cm, muy rápido, para reventar las burbujas. Cura 3-5 min cada capa.",
+    "   NO uses pistola de aire caliente: calienta toda la pieza por encima de lo que aguanta el PLA y deforma el relieve fino.",
     "5. Última capa: enrasa con el borde (o haz una cúpula si no hay borde, sin llegar al canto: la tensión superficial",
     "   la sujeta). Cura 5 min y deja la pieza 24 h a la luz antes de usarla. Si queda pegajosa, otro ciclo de UV.",
     "6. Por debajo, pega corcho o fieltro adhesivo (2-3 mm) para que no raye ni resbale.",
@@ -49,6 +71,8 @@ def _common_rows(layer: float, first: float, infill: str) -> list[tuple]:
         ("Strength", "Sparse infill density", "Infill Density", infill),
         ("Others", "Prime tower: Enable", "Prime Tower: Enable Prime Tower", "desactivado (purgas a mano en cada cambio)"),
         ("Support", "Enable support", "Generate Support", "desactivado"),
+        ("Extruder (ajustes de impresora)", "Z-hop height; Z-hop type", "Z Hop When Retracted; Z Hop Height",
+         ("0,4 mm; Normal (Normal Lift)", "activado; 0,4 mm")),
     ]
 
 
@@ -84,6 +108,7 @@ def photo_settings(size_mm: tuple[float, float, float], filaments: list, changes
         "Cura: Extensiones › Post-procesado › Modificar G-code › «Filament Change», una por capa):",
         *cura,
         "",
+        *BED_PREP,
         *M600,
         "SI EL RESULTADO NO SE PARECE A LA VISTA PREVIA",
         "- Lo que más cambia el resultado es el TD real de cada filamento. Si sale muy oscuro, sube el TD del color",
@@ -132,6 +157,8 @@ def coaster_settings(mode: str, n_colors: int, shape: str, size_mm: tuple[float,
         ]
         if rim:
             steps.append("El borde sube con la pieza: se imprime en cada franja con el color que toque (queda a rayas por fuera).")
+        else:
+            steps.append("Sin borde para resina, el proyecto activa el planchado (ironing) de las caras de arriba: quedan más lisas.")
     else:
         cambios = n_colors - 1 if inlay_mm <= 0.3 + 1e-6 else 2 * n_colors - 1
         steps = [
@@ -149,15 +176,20 @@ def coaster_settings(mode: str, n_colors: int, shape: str, size_mm: tuple[float,
             *_slicer_blocks(rows),
             f"La vista previa de Orca debería decir {cambios} cambio(s) de filamento. Carga primero el color del motivo.",
             "Si pausa nada más empezar (cambio inicial), reanuda sin cambiar nada.",
-            "Primera capa: nivela bien y limpia la cama con jabón: cualquier fallo se ve en la cara vista.",
+            "Primera capa: en el proyecto va a 15 mm/s (relleno a 30 mm/s) para que los trazos finos del motivo",
+            "no se levanten. Orden de colores en esa capa: mejor los claros antes que los oscuros, para que el",
+            "oscuro no manche al claro (Orca: clic derecho en la placa › «Secuencia de filamentos de la primera capa» ›",
+            "Personalizar). Si el motivo es claro sobre fondo oscuro, ya va así.",
         ]
-    lines = head + steps + ["", *M600]
+    lines = head + steps + ["", *BED_PREP, *M600]
     if mode == "relieve" and rim:
         lines += [*RESIN[:1], f"Esta pieza lleva borde de resina: hacen falta unos {resin_ml:.0f} ml para enrasarlo (prepara un 20 % más).",
                   *RESIN[1:]]
     else:
         lines += [*RESIN[:1], "Sin borde: aplica una capa fina en cúpula sobre la cara vista, sin llegar al canto.",
                   *RESIN[1:]]
+    if not (mode == "relieve" and rim):
+        lines += TPU
     lines += ["COMPROBACIONES",
               f"- Tamaño: {f1(w)} × {f1(h)} mm " + ("(cabe en la cama de la KE)." if max(w, h) <= BED[0] else "(NO cabe en la cama de 220 × 220 mm)."),
               ""]
