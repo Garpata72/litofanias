@@ -82,18 +82,25 @@ def _mesh_xml(oid: int, uuid: str, v: np.ndarray, t: np.ndarray) -> str:
 
 def write_project(path: str, parts: list[tuple[str, int, np.ndarray, np.ndarray]], colors: list[str],
                   layer: float, first: float, changes: list[tuple[float, int]] = (), name: str = "modelo",
-                  template: Path | None = None, overrides: dict[str, str] | None = None) -> None:
+                  template: Path | None = None, overrides: dict | None = None,
+                  reference: tuple[np.ndarray, np.ndarray] | None = None) -> None:
     """parts: [(nombre, filamento 1.., vértices (V,3), triángulos (T,3))], ya colocadas entre sí.
     colors: color «#RRGGBB» de cada filamento (define cuántos hay).
     changes: [(z de arriba de la capa, filamento)]: cambio de filamento al empezar esa capa, como el
     «Cambiar filamento» de la barra de capas de Orca.
     overrides: opciones del proceso que cambian para esta pieza (relleno, planchado, velocidad de la primera
-    capa…); si en la plantilla la opción es una lista, se repite el valor en cada elemento."""
+    capa…); si en la plantilla la opción es una lista, se repite el valor en cada elemento; una lista se pone
+    tal cual y una función recibe el valor actual y devuelve el nuevo.
+    reference: (mínimo, máximo) de la pieza entera. Con ella el objeto se coloca en la cama igual que si
+    llevara toda la pieza, así varias pasadas de la misma pieza (multipaso) caen exactamente en el mismo sitio."""
     zin = zipfile.ZipFile(template or TEMPLATE)
     config = _adjust_config(json.loads(zin.read("Metadata/project_settings.config")), colors, layer, first)
     for k, v in (overrides or {}).items():
         old = config.get(k)
-        config[k] = v if isinstance(v, list) else [v] * len(old) if isinstance(old, list) else v
+        if callable(v):
+            config[k] = v(old)
+        else:
+            config[k] = v if isinstance(v, list) else [v] * len(old) if isinstance(old, list) else v
     # Orden de los filamentos en la primera capa (Orca: «Secuencia de filamentos de la primera capa»).
     first_seq = config.get("first_layer_print_sequence")
     seq_value = " ".join(str(x) for x in first_seq) if first_seq and first_seq != ["0"] else ""
@@ -117,7 +124,7 @@ def write_project(path: str, parts: list[tuple[str, int, np.ndarray, np.ndarray]
 
     parts = [(n, e, np.asarray(v, float), np.asarray(t, int)) for n, e, v, t in parts]
     allv = np.concatenate([p[2] for p in parts])
-    lo, hi = allv.min(0), allv.max(0)
+    lo, hi = (np.asarray(reference[0], float), np.asarray(reference[1], float)) if reference else (allv.min(0), allv.max(0))
     center = (lo + hi) / 2
     cx, cy = _bed_center(config)
     tz = center[2] - lo[2]

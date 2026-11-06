@@ -177,9 +177,13 @@ def coaster_settings(mode: str, n_colors: int, shape: str, size_mm: tuple[float,
             f"La vista previa de Orca debería decir {cambios} cambio(s) de filamento. Carga primero el color del motivo.",
             "Si pausa nada más empezar (cambio inicial), reanuda sin cambiar nada.",
             "Primera capa: en el proyecto va a 15 mm/s (relleno a 30 mm/s) para que los trazos finos del motivo",
-            "no se levanten. Orden de colores en esa capa: mejor los claros antes que los oscuros, para que el",
-            "oscuro no manche al claro (Orca: clic derecho en la placa › «Secuencia de filamentos de la primera capa» ›",
-            "Personalizar). Si el motivo es claro sobre fondo oscuro, ya va así.",
+            "no se levanten.",
+            "ORDEN DE COLORES EN LA PRIMERA CAPA: deja «Secuencia de filamentos de la primera capa» en AUTOMÁTICO.",
+            "Con una secuencia personalizada «1 2», Orca 2.5 imprimió primero el filamento 2 (el fondo) y luego el 1, y",
+            "otra vez el 2: dos cambios en vez de uno. En automático empieza por el filamento 1 (el motivo), cambia al",
+            "fondo dentro de la misma capa y sigue con él hasta arriba: un solo M600. Compruébalo en el G-code",
+            "(se abre con cualquier editor de texto): el primer «MANUAL_TOOL_CHANGE» debe ser T0 y debe haber un único",
+            "«M600». Si no sale así, intercambia los números de filamento de las dos partes en la lista de objetos.",
         ]
     lines = head + steps + ["", *BED_PREP, *M600]
     if mode == "relieve" and rim:

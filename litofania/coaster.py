@@ -35,13 +35,14 @@ SEG = 128
 
 @dataclass
 class CoasterParams:
-    mode: str = "relieve"            # relieve | incrustado
+    mode: str = "relieve"            # relieve | incrustado | multipaso
     colors: int = 3                  # 2 | 3
     shape: str = "redondo"
     size_mm: float = 100.0           # ancho total de la pieza
     corner_mm: float = 6.0           # redondeo de las esquinas (cuadrado, triángulo, polígonos)
     thickness_mm: float = 4.0        # grosor de la base (color 1)
     margin_mm: float = 5.0           # franja exterior libre de motivo
+    pass_mm: float = 0.6             # multipaso: grosor de las pasadas del motivo (múltiplo de 0,2)
     inlay_mm: float = 0.3            # incrustado: grosor de los colores 2 y 3 (= primera capa en Orca)
     bevel_mm: float = 0.6            # incrustado: bisel del canto de la cara vista
     relief2_mm: float = 1.0          # relieve: alto del motivo (color 2) sobre la base
@@ -227,6 +228,7 @@ class Coaster:
     changes: list[tuple[float, int]]         # cambios por altura para Orca (relieve)
     first_layer: float
     face_down: bool                          # incrustado: la cara vista va contra la cama
+    passes: list | None = None               # multipaso: [{"nombre", "indice_color", "pieza", "z_hop"}] en orden de impresión
 
 
 def _union(parts) -> Manifold:
@@ -241,8 +243,9 @@ def build(p: CoasterParams) -> Coaster:
     if c2.is_empty() and c3.is_empty():
         raise ValueError("El motivo está vacío: escribe un texto o elige una silueta")
     n = p.colors
-    if p.mode == "incrustado":
-        t, e, bev = p.thickness_mm, p.inlay_mm, min(p.bevel_mm, p.thickness_mm / 3)
+    if p.mode in ("incrustado", "multipaso"):
+        multi = p.mode == "multipaso"
+        t, e, bev = p.thickness_mm, (snap(p.pass_mm) if multi else p.inlay_mm), min(p.bevel_mm, p.thickness_mm / 3)
         body = Manifold.batch_hull([outline(p, bev).extrude(0.01), outline(p).extrude(t - bev).translate((0, 0, bev))])
         m2 = (c2 - c3).mirror((1, 0))     # en espejo: al dar la vuelta a la pieza se lee bien
         m3 = c3.mirror((1, 0))
@@ -253,6 +256,13 @@ def build(p: CoasterParams) -> Coaster:
         # fondo y siga con él hasta arriba.
         parts = [("color1", n, col1), ("color2", 1, col2)] + ([("color3", 2, col3)] if n >= 3 else [])
         parts = [q for q in parts if not q[2].is_empty()]
+        if multi:
+            # Pasadas: primero los colores del motivo (poco grosor, sin cambios de filamento) y al final el
+            # cuerpo, que se imprime alrededor. Cada pasada es un archivo aparte, con el mismo sitio en la cama.
+            order = [q for q in parts if q[0] != "color1"] + [q for q in parts if q[0] == "color1"]
+            passes = [{"nombre": f"pasada{i + 1}-{name}", "indice_color": int(name[-1]) - 1, "pieza": m,
+                       "z_hop": round(0.2 if i == 0 else e + 0.2, 2)} for i, (name, _, m) in enumerate(order)]
+            return Coaster(parts, _union(parts), [], LAYER, True, passes)
         return Coaster(parts, _union(parts), [], min(e, 0.3), True)
 
     t, a2, a3 = snap(p.thickness_mm), snap(p.relief2_mm), snap(p.relief3_mm)

@@ -249,9 +249,7 @@ def make_coaster(req: CoasterRequest) -> dict:
             parts.append((f"{name} ({names[idx]})", fil, v, f))
         # Primera capa lenta: los detalles finos del motivo se pegan mejor a la cama.
         orca.write_project(str(out / f"{stem}.3mf"), parts, filcolors, 0.2, c.first_layer, [], "posavasos", _template(),
-                           {**COASTER_PROCESS, "initial_layer_speed": "15", "initial_layer_infill_speed": "30",
-                            # Primera capa: motivo primero (filamento 1…) y el fondo el último, que sigue hasta arriba.
-                            "first_layer_print_sequence": [str(i + 1) for i in range(n)]})
+                           {**COASTER_PROCESS, "initial_layer_speed": "15", "initial_layer_infill_speed": "30"})
     else:
         rim = req.borde > 0
         orca.write_project(str(out / f"{stem}.3mf"), [("posavasos", 1, whole_v, whole_f)], req.paleta[:n], 0.2, 0.2,
