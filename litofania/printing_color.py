@@ -179,11 +179,13 @@ def coaster_settings(mode: str, n_colors: int, shape: str, size_mm: tuple[float,
             "Primera capa: en el proyecto va a 15 mm/s (relleno a 30 mm/s) para que los trazos finos del motivo",
             "no se levanten.",
             "ORDEN DE COLORES EN LA PRIMERA CAPA: deja «Secuencia de filamentos de la primera capa» en AUTOMÁTICO.",
-            "Con una secuencia personalizada «1 2», Orca 2.5 imprimió primero el filamento 2 (el fondo) y luego el 1, y",
-            "otra vez el 2: dos cambios en vez de uno. En automático empieza por el filamento 1 (el motivo), cambia al",
-            "fondo dentro de la misma capa y sigue con él hasta arriba: un solo M600. Compruébalo en el G-code",
-            "(se abre con cualquier editor de texto): el primer «MANUAL_TOOL_CHANGE» debe ser T0 y debe haber un único",
-            "«M600». Si no sale así, intercambia los números de filamento de las dos partes en la lista de objetos.",
+            "AVISO: en una capa mixta Orca ordena los colores para gastar el menor número de cambios, así que puede",
+            "imprimir primero el filamento 2 aunque lo hayas numerado después (la vista previa y el G-code lo muestran).",
+            "No es un error: el resultado es el mismo. Con el incrustado en 0,3 mm (una sola capa mixta) hay un único",
+            "M600; con 0,5 mm (dos capas mixtas) hay dos. Una secuencia personalizada «1 2» no lo arregla (Orca 2.5",
+            "imprimió el filamento 2 primero y añadió un cambio más). Revisa en el G-code los «MANUAL_TOOL_CHANGE» y",
+            "los «M600»: debe haber uno por cada cambio de la vista previa. Si quieres que empiece el otro color,",
+            "intercambia los filamentos de las dos partes en la lista de objetos o los colores en la tabla de la app.",
         ]
     lines = head + steps + ["", *BED_PREP, *M600]
     if mode == "relieve" and rim:
