@@ -5,7 +5,9 @@ cambios de filamento ya puestos, más el STL y un texto con las instrucciones de
 from __future__ import annotations
 
 import math
+import re
 import time
+import zipfile
 from pathlib import Path
 from typing import Literal
 
@@ -19,7 +21,7 @@ from litofania import coaster as coasters
 from litofania import multicolor as mc
 from litofania import orca, svgmotif
 from litofania.accessories import _mesh
-from litofania.printing_color import coaster_settings, photo_settings
+from litofania.printing_color import coaster_settings, multipass_settings, photo_settings
 from litofania.shapes import signed_volume
 from litofania.stl import write_stl
 
@@ -156,7 +158,7 @@ def color_photo_png(image_id: str) -> FileResponse:
 # ───────── Posavasos ─────────
 
 class CoasterRequest(BaseModel):
-    modo: Literal["relieve", "incrustado"] = "relieve"
+    modo: Literal["relieve", "incrustado", "multipaso"] = "relieve"
     colores: Literal[2, 3] = 3
     forma: Literal[coasters.SHAPES] = "redondo"   # type: ignore[valid-type]
     tamano: float = Field(100.0, ge=50, le=200)
@@ -164,6 +166,7 @@ class CoasterRequest(BaseModel):
     grosor: float = Field(4.0, ge=2, le=10)
     margen: float = Field(5.0, ge=0, le=30)
     incrustacion: Literal[0.3, 0.5] = 0.3
+    pasada: Literal[0.4, 0.6, 0.8] = 0.6
     alto2: float = Field(1.0, ge=0.4, le=4)
     alto3: float = Field(0.8, ge=0.4, le=4)
     borde: float = Field(3.0, ge=0, le=10)
@@ -213,7 +216,7 @@ def _svg(sid: str | None) -> str | None:
 def _coaster_params(req: CoasterRequest) -> coasters.CoasterParams:
     return coasters.CoasterParams(
         mode=req.modo, colors=req.colores, shape=req.forma, size_mm=req.tamano, corner_mm=req.esquinas,
-        thickness_mm=req.grosor, margin_mm=req.margen, inlay_mm=req.incrustacion, relief2_mm=req.alto2,
+        thickness_mm=req.grosor, margin_mm=req.margen, inlay_mm=req.incrustacion, pass_mm=req.pasada, relief2_mm=req.alto2,
         relief3_mm=req.alto3, rim_mm=req.borde, rim_up_mm=req.borde_alto, motif=req.motivo, text2=req.texto2,
         text3=req.texto3, text_mm=req.texto_mm, mask2=_mask(req.mascara2_id), mask3=_mask(req.mascara3_id),
         motif_mm=req.motivo_mm, svg=_svg(req.svg_id) if req.motivo == "svg" else None, svg_map=req.svg_mapa,
@@ -239,7 +242,10 @@ def make_coaster(req: CoasterRequest) -> dict:
     write_stl(str(out / f"{stem}.stl"), whole_v, whole_f)
     # Proyecto de Orca: relieve = una pieza con cambios por altura; incrustado = una parte por color.
     lo = np.asarray(c.whole.bounding_box()[:3])
-    if c.face_down:
+    multi = _write_passes(c, req, stem, lo, names) if c.passes else None
+    if multi:
+        pass
+    elif c.face_down:
         filcolors = [None] * n
         parts = []
         for name, fil, m in c.parts:
@@ -265,18 +271,60 @@ def make_coaster(req: CoasterRequest) -> dict:
     b = c.whole.bounding_box()
     size = (b[3] - b[0], b[4] - b[1], b[5] - b[2])
     resin = coasters.resin_ml(p, c)
-    (out / f"{stem}-ajustes.txt").write_text(
-        coaster_settings(req.modo, n, req.forma, size, req.paleta, names, c.changes, c.first_layer, req.incrustacion,
-                         c.whole.volume(), resin, req.modo == "relieve" and req.borde > 0), encoding="utf-8")
+    if multi:
+        text = multipass_settings(req.forma, size, multi["pasadas"], coasters.snap(req.pasada), multi["centro"], c.whole.volume())
+    else:
+        text = coaster_settings(req.modo, n, req.forma, size, req.paleta, names, c.changes, c.first_layer, req.incrustacion,
+                                c.whole.volume(), resin, req.modo == "relieve" and req.borde > 0)
+    (out / f"{stem}-ajustes.txt").write_text(text, encoding="utf-8")
     root = f"/api/posavasos/{cid}"
+    if multi:
+        with zipfile.ZipFile(out / f"{stem}-pasadas.zip", "w", zipfile.ZIP_DEFLATED) as z:
+            for ps in multi["pasadas"]:
+                z.write(out / f"{stem}-{ps['nombre']}.3mf", f"{ps['archivo']}")
+                z.write(out / f"{stem}-{ps['nombre']}.stl", f"referencia/{ps['nombre']}.stl")
+            z.write(out / f"{stem}-ajustes.txt", "INSTRUCCIONES.txt")
     layers = None
     if not c.face_down:   # relieve: el color de cada altura, para el visor (el borde sale con el último color)
         bands = [0.0] + [z - coasters.LAYER for z, _ in c.changes]
         layers = {"z0": 0.0, "h": coasters.LAYER, "colores": [
             req.paleta[sum(1 for zb in bands[1:] if k * coasters.LAYER > zb + 1e-6)] for k in range(int(round(size[2] / coasters.LAYER)) + 1)]}
-    return {"id": cid, "stl": f"{root}.stl", "capas_color": layers, "tresmf": f"{root}.3mf", "ajustes": f"{root}-ajustes.txt", "partes": views,
+    extra = {}
+    if multi:
+        extra = {"zip": f"{root}-pasadas.zip", "pasadas": [
+            {"nombre": ps["nombre"], "archivo": ps["archivo"], "color": ps["color"], "filamento": ps["filamento"], "z_hop": ps["z_hop"],
+             "tresmf": f"{root}-{ps['nombre']}.3mf", "stl": f"{root}-{ps['nombre']}.stl"} for ps in multi["pasadas"]]}
+    return {**extra, "id": cid, "stl": f"{root}.stl", "capas_color": layers, "tresmf": None if multi else f"{root}.3mf", "ajustes": f"{root}-ajustes.txt", "partes": views,
             "medidas_mm": [round(x, 1) for x in size], "gramos": round(c.whole.volume() / 1000 * 1.24 * 0.5),
             "resina_ml": round(resin, 1), "cambios": [{"z": z, "color": e} for z, e in c.changes]}
+
+
+def _write_passes(c, req: CoasterRequest, stem: str, lo: np.ndarray, names: list[str]) -> dict:
+    """Multipaso: un STL y un proyecto de Orca por pasada, todos en el mismo sitio de la cama."""
+    out = storage.MODELS
+    hi = np.asarray(c.whole.bounding_box()[3:])
+    reference = (np.zeros(3), hi - lo)
+    cfg_center = (110.0, 110.0)
+    start_no_probe = lambda g: "\n".join(ln for ln in g.splitlines()
+                                         if not re.match(r"\s*(G28 Z\b|BED_MESH_CALIBRATE)", ln))
+    keep_bed_hot = lambda g: "\n".join(ln for ln in g.splitlines() if not re.match(r"\s*M140 S0\b", ln))
+    info = []
+    for i, ps in enumerate(c.passes):
+        last = i == len(c.passes) - 1
+        v, f = _mesh_at(ps["pieza"], lo)
+        write_stl(str(out / f"{stem}-{ps['nombre']}.stl"), v, f)
+        idx = ps["indice_color"]
+        over = {**COASTER_PROCESS, "initial_layer_speed": "15", "initial_layer_infill_speed": "30",
+                "z_hop": str(ps["z_hop"]), "skirt_loops": "0", "brim_type": "no_brim", "ironing_type": "no ironing"}
+        if i > 0:
+            over["machine_start_gcode"] = start_no_probe
+        if not last:
+            over["machine_end_gcode"] = keep_bed_hot
+        orca.write_project(str(out / f"{stem}-{ps['nombre']}.3mf"), [(ps["nombre"], 1, v, f)], [req.paleta[idx]],
+                           0.2, 0.2, [], ps["nombre"], _template(), over, reference)
+        info.append({"nombre": ps["nombre"], "archivo": f"{ps['nombre']}.3mf", "color": req.paleta[idx],
+                     "filamento": names[idx], "z_hop": ps["z_hop"]})
+    return {"pasadas": info, "centro": cfg_center}
 
 
 def _mesh_at(m, origin) -> tuple[np.ndarray, np.ndarray]:
@@ -357,3 +405,8 @@ def svg_file(sid: str) -> FileResponse:
     if path is None:
         raise HTTPException(404, "SVG no encontrado")
     return FileResponse(path, media_type="image/svg+xml")
+
+
+@router.get("/api/posavasos/{cid}-pasadas.zip")
+def coaster_passes_zip(cid: str) -> FileResponse:
+    return FileResponse(_file(f"posavasos-{cid}", "-pasadas.zip"), media_type="application/zip", filename=f"posavasos-{cid}-pasadas.zip")

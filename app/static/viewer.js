@@ -255,6 +255,9 @@ async function open(opts) {
   const mf = $("#lbDownload3mf");
   mf.hidden = !opts.download3mf;
   if (opts.download3mf) mf.href = opts.download3mf;
+  const zp = $("#lbDownloadZip");
+  zp.hidden = !opts.downloadZip;
+  if (opts.downloadZip) zp.href = opts.downloadZip;
   const st = $("#lbSettings");
   st.hidden = !opts.settings;
   if (opts.settings) st.href = opts.settings;

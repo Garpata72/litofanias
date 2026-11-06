@@ -12,7 +12,7 @@ const Color = (() => {
   ];
   const DEF_FILS = [["negro", "#1b1b1b", 0.5], ["marrón", "#a0602e", 1.6], ["blanco", "#f2eee4", 3.0]];
   const FIELDS = ["c_ancho", "c_contorno", "c_borde", "c_borde_alto", "c_peso", "c_capas", "c_contraste", "c_auto", "c_capa", "c_primera", "c_base", "c_resolucion",
-    "p_forma", "p_tamano", "p_esquinas", "p_modo", "p_colores", "p_motivo", "p_texto2", "p_texto3", "p_texto_mm", "p_mascara2", "p_mascara3", "p_motivo_mm", "p_ajuste", "p_giro", "p_dx", "p_dy",
+    "p_forma", "p_tamano", "p_esquinas", "p_modo", "p_pasada", "p_colores", "p_motivo", "p_texto2", "p_texto3", "p_texto_mm", "p_mascara2", "p_mascara3", "p_motivo_mm", "p_ajuste", "p_giro", "p_dx", "p_dy",
     "p_grosor", "p_margen", "p_alto2", "p_alto3", "p_borde", "p_borde_alto", "p_incrustacion"];
   let on = false, tipo = "foto";
   let fils = DEF_FILS.map(([nombre, color, td]) => ({ nombre, color, td }));
@@ -403,7 +403,7 @@ const Color = (() => {
   function coasterBody() {
     const n = Number(read("p_colores"));
     return {
-      modo: read("p_modo"), colores: n, forma: read("p_forma"), tamano: read("p_tamano"), esquinas: read("p_esquinas"),
+      modo: read("p_modo"), pasada: Number(read("p_pasada")), colores: n, forma: read("p_forma"), tamano: read("p_tamano"), esquinas: read("p_esquinas"),
       grosor: read("p_grosor"), margen: read("p_margen"), incrustacion: Number(read("p_incrustacion")), alto2: read("p_alto2"),
       alto3: read("p_alto3"), borde: read("p_borde"), borde_alto: read("p_borde_alto"), motivo: read("p_motivo"),
       texto2: read("p_texto2"), texto3: read("p_texto3"), texto_mm: read("p_texto_mm"),
@@ -438,7 +438,8 @@ const Color = (() => {
       g.addColorStop(0.15, "rgba(255,255,255,0)"); g.addColorStop(0.3, "rgba(255,255,255,.32)"); g.addColorStop(0.45, "rgba(255,255,255,0)");
       c.save(); c.clip(path(coasterGeo.interior || coasterGeo.contorno), "evenodd"); c.fillStyle = g; c.fillRect(0, 0, S, S); c.restore();
     }
-    const changes = rel ? `${n - 1} cambio(s) de filamento, sin capas mixtas` : `incrustado: ${n - 1} cambio(s) en la primera capa; se imprime boca abajo`;
+    const mp = read("p_modo") === "multipaso";
+    const changes = mp ? `multipaso: ${n} pasadas en el mismo sitio de la cama, sin M600; se imprime boca abajo` : rel ? `${n - 1} cambio(s) de filamento, sin capas mixtas` : `incrustado: ${n - 1} cambio(s) en la primera capa; se imprime boca abajo`;
     const lost = coasterGeo.perdido > 0.02 ? ` Se recorta un ${Math.round(coasterGeo.perdido * 100)} % del motivo por salirse del área libre: redúcelo, muévelo o aumenta el tamaño.` : "";
     $("#colorInfo").textContent = coasterGeo.vacio ? "El motivo está vacío: escribe un texto, elige una silueta o un SVG." :
       `${size} mm · ${changes}${coasterGeo.interior ? ". El borde lleva arriba el último color: hace de molde para la resina UV." : "."}${lost}`;
@@ -461,7 +462,8 @@ const Color = (() => {
     $("[data-c-borde]").hidden = !(read("c_borde") > 0);
     const rel = read("p_modo") === "relieve", mot = read("p_motivo");
     $$("[data-p-rel]").forEach((e) => (e.hidden = !rel));
-    $$("[data-p-inc]").forEach((e) => (e.hidden = rel));
+    $$("[data-p-inc]").forEach((e) => (e.hidden = rel || read("p_modo") === "multipaso"));
+    $$("[data-p-mp]").forEach((e) => (e.hidden = read("p_modo") !== "multipaso"));
     $$("[data-p-mot]").forEach((e) => (e.hidden = !e.dataset.pMot.split(" ").includes(mot)));
     $("[data-p-esq]").hidden = ["redondo", "flor", "gota"].includes(read("p_forma"));
     $$("output[data-for^='c_']").forEach((o) => (o.textContent = Number($(`#${o.dataset.for}`).value).toLocaleString("es-ES")));
@@ -486,7 +488,7 @@ const Color = (() => {
         window.Visor.open({
           ...(info.capas_color ? { url: info.stl, colorLayers: info.capas_color } : { parts: info.partes }), name: `Posavasos ${read("p_forma")}`, mode: "color",
           details: `${w} × ${h} × ${d} mm · unos ${info.gramos} g de PLA` + (info.resina_ml ? ` · unos ${info.resina_ml.toLocaleString("es-ES")} ml de resina` : ""),
-          download: info.stl, download3mf: info.tresmf, settings: info.ajustes,
+          download: info.stl, download3mf: info.tresmf, downloadZip: info.zip, settings: info.ajustes,
         });
       } else {
         if (!current) return;

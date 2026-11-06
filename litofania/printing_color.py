@@ -198,3 +198,86 @@ def coaster_settings(mode: str, n_colors: int, shape: str, size_mm: tuple[float,
               f"- Tamaño: {f1(w)} × {f1(h)} mm " + ("(cabe en la cama de la KE)." if max(w, h) <= BED[0] else "(NO cabe en la cama de 220 × 220 mm)."),
               ""]
     return "\n".join(lines)
+
+
+def multipass_settings(shape: str, size_mm: tuple[float, float, float], passes: list[dict], pass_mm: float,
+                       bed_center: tuple[float, float], volume_mm3: float) -> str:
+    """Instrucciones del posavasos multipaso. `passes`: [{"nombre", "filamento", "color", "z_hop"}] en orden."""
+    w, h, d = size_mm
+    n = len(passes)
+    steps = []
+    for i, ps in enumerate(passes):
+        last = i == n - 1
+        steps += [
+            f"PASADA {i + 1} de {n}: {ps['filamento']} ({ps['color']}) — archivo {ps['archivo']}",
+            f"   Z-hop {f2(ps['z_hop'])} mm. " + ("Va solo con los trazos finos del motivo, de 0 a " + f2(pass_mm) + " mm." if not last else
+                                                f"Es el cuerpo: se imprime alrededor de lo ya impreso hasta {f2(d)} mm de alto."),
+            "   " + ("Carga este filamento, abre su 3MF y lamina." if i == 0 else
+                     "Sin tocar la pieza: cambia el filamento (descarga y carga el nuevo, purga a mano fuera de la pieza), abre su 3MF y lamina."),
+            "",
+        ]
+    lines = [
+        f"POSAVASOS MULTIPASO ({shape}) — {PRINTER}",
+        f"Pieza: {f1(w)} × {f1(h)} × {f1(d)} mm. Unos {grams(volume_mm3) * 0.5:.0f} g de PLA (relleno 20 %).",
+        f"Se imprime en {n} pasadas, una por color, cada una en su archivo y SIN la pieza quitada de la cama.",
+        "",
+        "QUÉ ES Y CUÁNDO CONVIENE",
+        "- En vez de pausar la impresora (M600) a mitad de capa, cada color es una impresión completa aparte, sobre la misma",
+        "  cama y en el mismo sitio. La boquilla nunca se queda parada y caliente encima de la cara vista, y no hay que",
+        "  acertar con el momento del cambio. Entre pasadas cambias el filamento con calma.",
+        "- Los colores del motivo (poco grosor) van primero y el cuerpo va el último, rodeándolos. La boquilla sube",
+        "  (Z-hop) para pasar por encima de lo ya impreso. La cara vista es la que toca la cama: se imprime boca abajo.",
+        "- Sirve también con filamento flexible (TPU) en alguna pasada y para pasar de 2-3 colores: hay una pasada por color.",
+        "",
+        "LO QUE DEBES SABER DE LA KE ANTES DE EMPEZAR (no lo he podido probar en tu impresora)",
+        "- El inicio normal de la KE hace «G28 Z» y «BED_MESH_CALIBRATE»: el palpador toca la cama con la boquilla en",
+        "  varios puntos. A partir de la pasada 2 eso chocaría con lo ya impreso, así que los proyectos de las pasadas 2 y",
+        "  siguientes NO lo llevan. El final de cada pasada solo suelta X, Y y el extrusor, no Z: por eso la impresora",
+        "  sigue sabiendo dónde está la cama. CONDICIÓN: no apagues ni reinicies la impresora entre pasadas ni muevas Z a",
+        "  mano. Si lo haces, no continúes: vuelve a empezar desde la pasada 1.",
+        "- Entre pasadas la cama sigue caliente (el final de las pasadas intermedias no la apaga), para que la pieza no",
+        "  se encoja y se despegue. Mejor no tardes más de 15-20 minutos entre una pasada y la siguiente.",
+        "- Falda y borde (skirt/brim) están desactivados: una falda de la pasada 2 chocaría con la pieza de la pasada 1.",
+        "- Haz la primera vez una PRUEBA PEQUEÑA (tamaño 50 mm) con la mano cerca del botón de parada y mirando la primera",
+        "  capa de cada pasada. Es una técnica nueva en tu máquina: aquí se aprende probando.",
+        "",
+        "ORDEN DE IMPRESIÓN",
+        *steps,
+        "COLOCACIÓN: la posición es la misma en todas las pasadas",
+        f"- Cada 3MF ya coloca la pieza en el mismo punto de la cama (centro: X {bed_center[0]:g}, Y {bed_center[1]:g}).",
+        "  Al abrir cada archivo, comprueba en el panel del objeto que la posición es la misma. NO muevas el objeto,",
+        "  NO pulses «Organizar» (A) y NO importes los STL sueltos (el laminador los centraría uno a uno). Los STL de",
+        "  este paquete están solo como referencia.",
+        "",
+        "PASO A PASO EN LA MÁQUINA",
+        "1. Limpia la cama con alcohol isopropílico y no la toques. Carga el filamento de la pasada 1 y lámina su 3MF.",
+        "2. Imprime la pasada 1. Al acabar la boquilla se aparta y la cama sigue caliente. NO retires la pieza.",
+        "3. Con la impresora encendida: descarga el filamento, carga el de la pasada 2, purga hasta que salga limpio y",
+        "   quita el hilo de la boquilla con pinzas (y limpia la boquilla: lo que quede se arrastra sobre la pieza).",
+        "4. Lamina el 3MF de la pasada 2 y envíalo. La impresora hará el homing X e Y y empezará sin palpar la cama.",
+        "5. Repite hasta la última pasada (el cuerpo). Tras ella, ya sí puedes dejar enfriar la cama y retirar la pieza.",
+        "",
+        "AJUSTES QUE LLEVAN LOS PROYECTOS (ya puestos)",
+        "- Capas de 0,20 mm y primera capa de 0,20 mm en todas las pasadas (si una pasada tuviera otra altura, las",
+        "  alturas no cuadrarían). Relleno 20 % giroide, 3 paredes, primera capa lenta (15 mm/s).",
+        "- Z-hop: pasada 1 de 0,2 mm; las siguientes de " + f2(pass_mm + 0.2) + " mm (grosor de lo ya impreso + 0,2 mm).",
+        "- Sin falda ni borde. Sin torre de purga. Sin planchado.",
+        "- Si usas tu propio perfil y no el del proyecto, pon el Z-hop a «grosor de lo ya impreso + 0,2 mm» y",
+        "  desactiva la falda en las pasadas 2 y siguientes.",
+        "",
+        "QUÉ MIRAR Y CÓMO CORREGIR",
+        "- Se ve una rendija fina entre colores: la pieza se movió entre pasadas (el despegue de la pasada 1 es la",
+        "  causa más probable) o la cama estaba fría al reanudar. Mantén la cama caliente y limpia mejor la cama.",
+        "- La boquilla roza lo ya impreso al viajar: sube el Z-hop 0,2 mm.",
+        "- Un color no se pega al contiguo: es normal que el borde sea una línea; la pasada del cuerpo lo rodea y lo sujeta.",
+        "",
+        *BED_PREP,
+        *TPU,
+        *RESIN[:1],
+        "Sin borde: aplica una capa fina en cúpula sobre la cara vista, sin llegar al canto.",
+        *RESIN[1:],
+        "COMPROBACIONES",
+        f"- Tamaño: {f1(w)} × {f1(h)} mm " + ("(cabe en la cama de la KE)." if max(w, h) <= BED[0] else "(NO cabe en la cama de 220 × 220 mm)."),
+        "",
+    ]
+    return "\n".join(lines)

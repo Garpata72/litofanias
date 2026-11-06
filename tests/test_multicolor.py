@@ -215,3 +215,40 @@ def test_svg_default_map_ignores_dominant_background():
     assert svgmotif.default_map({"#111": 80, "#f00": 15, "#0f0": 5}) == {"#111": 0, "#f00": 2, "#0f0": 3}
     assert svgmotif.default_map({"#111": 50, "#f00": 30, "#0f0": 20}) == {"#111": 2, "#f00": 3, "#0f0": 0}
     assert svgmotif.default_map({"#111": 100}) == {"#111": 2}
+
+
+def test_multipass_coaster_structure():
+    p = coaster.CoasterParams(mode="multipaso", colors=3, shape="redondo", size_mm=90, motif="texto", text2="AB", text3="CD")
+    c = coaster.build(p)
+    assert c.face_down and not c.changes
+    assert len(c.passes) == 3
+    # los colores del motivo van primero y la base (color 1) al final
+    assert [ps["indice_color"] for ps in c.passes][-1] == 0
+    assert c.passes[0]["z_hop"] == pytest.approx(0.2)
+    assert all(ps["z_hop"] > 0.2 for ps in c.passes[1:])
+
+
+def test_api_multipass_zip_and_gcode_tweaks(client):
+    r = client.post("/api/posavasos", json={"modo": "multipaso", "colores": 3, "motivo": "texto", "texto2": "A", "texto3": "B", "pasada": 0.6})
+    assert r.status_code == 200, r.text
+    info = r.json()
+    assert info["tresmf"] is None and len(info["pasadas"]) == 3
+    assert "PASADAS" in client.get(info["ajustes"]).text.upper()
+    z = zipfile.ZipFile(io.BytesIO(client.get(info["zip"]).content))
+    names = z.namelist()
+    assert "INSTRUCCIONES.txt" in names
+    mf = [n for n in names if n.endswith(".3mf")]
+    assert len(mf) == 3
+    transforms, cfgs = set(), []
+    for n in sorted(mf):
+        inner = zipfile.ZipFile(io.BytesIO(z.read(n)))
+        model = inner.read("3D/3dmodel.model").decode()
+        import re as _re
+        transforms.update(_re.findall(r'transform="([^"]+)"', model))
+        cfgs.append(inner.read("Metadata/project_settings.config").decode())
+    assert len({t for t in transforms if t.endswith(' 2')}) == 1   # mismo sitio en la cama
+    start = [json.loads(c)["machine_start_gcode"] for c in cfgs]
+    end = [json.loads(c)["machine_end_gcode"] for c in cfgs]
+    assert "BED_MESH_CALIBRATE" in start[0] and all("BED_MESH_CALIBRATE" not in s and "G28 Z" not in s for s in start[1:])
+    assert all("M140 S0" not in e for e in end[:-1]) and "M140 S0" in end[-1]
+    assert all(json.loads(c)["skirt_loops"] == "0" for c in cfgs)

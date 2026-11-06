@@ -142,7 +142,9 @@
           <select id="p_modo" aria-label="Cómo se reparten los colores">
             <option value="relieve">Relieve con borde para resina (cara de arriba)</option>
             <option value="incrustado">Incrustado (cara lisa contra la cama)</option>
+            <option value="multipaso">Multipaso (una pasada por color, sin M600)</option>
           </select></label>
+        <label class="fsel" data-p-mp hidden><span>Grosor de cada pasada</span><select id="p_pasada"><option value="0.4">0,4 mm</option><option value="0.6" selected>0,6 mm</option><option value="0.8">0,8 mm</option></select></label>
         <label class="fsel"><span>Colores</span><select id="p_colores" aria-label="Número de colores"><option value="3">3</option><option value="2">2</option></select></label>
         <div id="p_paleta" class="filrows"></div>
         <label class="fsel"><span>Motivo</span>
@@ -405,6 +407,7 @@
     </div>
     <button id="lbFit" class="iconbtn" data-icon="fit" title="Volver a encuadrar (F)" aria-label="Volver a encuadrar"></button>
     <a id="lbSettings" class="btn small" download title="Ajustes recomendados para imprimir esta pieza en la Ender 3 V3 KE"><span data-icon="doc"></span> Ajustes de impresión</a>
+    <a id="lbDownloadZip" class="btn small" download hidden title="ZIP con un proyecto de Orca por pasada, las instrucciones y los STL de referencia"><span data-icon="download"></span> ZIP pasadas</a>
     <a id="lbDownload3mf" class="btn small" download title="3MF con cada pieza por separado (y la caja o la base, si la has generado)"><span data-icon="download"></span> 3MF</a>
     <a id="lbDownload" class="btn primary small" download><span data-icon="download"></span> Descargar STL</a>
     <button id="lbClose" class="iconbtn" data-icon="close" title="Cerrar (Esc)" aria-label="Cerrar"></button>

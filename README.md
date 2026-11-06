@@ -92,6 +92,8 @@ Al generar se abre el visor 3D con los colores (botón **Color**), y se descarga
 
 El proyecto de Orca del posavasos ajusta, además de los filamentos y las capas: relleno al 20 % con giroide, 3 paredes, **Z-hop de 0,4 mm** (la boquilla sube por encima de lo ya impreso al viajar), primera capa lenta (15 mm/s) en el modo incrustado y planchado de las caras de arriba si no hay borde de resina. Las instrucciones añaden la limpieza de la cama y de la boquilla (la suciedad queda aplastada bajo la primera capa), el orden de colores en la primera capa, la limpieza con llama fina y cortacutículas (nunca pistola de aire caliente) y una variante para TPU.
 
+**Modo multipaso (experimental).** Imprime el posavasos boca abajo en varias pasadas, una por color y sin M600: cada pasada es un proyecto de Orca con una sola pieza, colocada en el mismo sitio de la cama (X110 Y110) y con una sola pieza de un filamento. Se descarga todo en un ZIP (`…-pasadas.zip`) con los 3MF, los STL de referencia y `INSTRUCCIONES.txt`. Las pasadas posteriores a la primera quitan del G-code de inicio el `G28 Z` y el `BED_MESH_CALIBRATE` (la KE sondea con la boquilla y rascaría lo ya impreso), las intermedias no apagan la cama, y todas desactivan falda y borde. Z-hop de 0,2 mm en la primera pasada y espesor de pasada + 0,2 mm en las demás. No está probado en la impresora: hazlo primero con un posavasos de 50 mm.
+
 El 3MF parte de `litofania/plantillas/orca_ender3v3ke.3mf`, un proyecto vacío guardado en Orca 2.5 con el perfil de la KE (Elegoo Rapid PLA+, M600, sin torre de purga). Para usar otro perfil, guarda en Orca un proyecto con 2 filamentos y ponlo en `datos/plantilla_orca.3mf`.
 
 ## Bajorrelieves: prueba de mapas de profundidad (fase 0)
