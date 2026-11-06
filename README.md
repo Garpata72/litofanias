@@ -76,6 +76,20 @@ Arriba, junto al logo, el conmutador **Litofanía / Bajorrelieve** cambia el pan
 
 Al generar se abre el visor 3D y salen el STL, el 3MF y el archivo de **ajustes de impresión** para la Ender 3 V3 KE con los nombres de las opciones en Orca Slicer, Bambu Studio y Cura. El mapa de profundidad y la máscara se guardan en `datos/cache`, así que cambiar tamaño, grosor o forma es inmediato. Sin onnxruntime o sin modelos sigue funcionando «Sin IA».
 
+## Multicolor: foto en color (tipo HueForge) y posavasos
+
+El conmutador de arriba tiene un tercer modo, **Multicolor**, pensado para la Ender 3 V3 KE con un solo extrusor: cada cambio de color es manual (M600), así que todo se diseña para cambiar de filamento pocas veces y solo a ciertas alturas.
+
+**Foto en color.** Convierte la foto abierta en una placa de capas finas (0,08 mm) con hasta **4 filamentos**, ordenados de oscuro a claro. Los filamentos son algo translúcidos en capas finas: el color de abajo se ve a través de los de arriba y salen degradados. Para cada filamento se indica su color y su **TD** (mm a partir de los que ya no deja ver lo de debajo; hay una pequeña biblioteca con valores aproximados). La **vista previa** se recalcula al momento en el navegador al cambiar cualquier valor (filamentos, TD, peso del color, número de capas, contraste, forma, borde): muestra el color que tendrá cada zona, el sombreado del relieve y, si quieres, el brillo de la resina, junto con la pila de colores por capa y las capas exactas de cambio. Las capas de cambio se eligen solas (las que mejor reproducen la foto) o se ponen a mano. Formas: rectángulo, redondeado, círculo, óvalo, triángulo y hexágono, con **borde para resina** opcional.
+
+**Posavasos.** Redondo, cuadrado, **triangular**, hexágono, octógono, **flor** (borde ondulado) o **gota**, del tamaño que indiques, con 2 o 3 colores y motivo de ejemplo, texto o silueta subida. Dos modos:
+- **Relieve con borde para resina**: base, motivo encima y detalle encima del motivo, cada color en su franja de altura (ninguna capa mixta). El borde sube por encima del motivo y hace de molde: se vierte resina UV hasta enrasar y queda una cara lisa, brillante y protegida. La app calcula los ml de resina.
+- **Incrustado**: cara vista plana contra la cama, boca abajo y con el motivo en espejo; solo la primera capa tiene varios colores.
+
+Al generar se abre el visor 3D con los colores (botón **Color**), y se descargan el STL, el **3MF de OrcaSlicer** (proyecto con el perfil de la KE, los filamentos con su color y los cambios de filamento ya puestos en la barra de capas: Archivo › Abrir proyecto) y las **instrucciones** de impresión, de cambio de filamento y de acabado con resina UV.
+
+El 3MF parte de `litofania/plantillas/orca_ender3v3ke.3mf`, un proyecto vacío guardado en Orca 2.5 con el perfil de la KE (Elegoo Rapid PLA+, M600, sin torre de purga). Para usar otro perfil, guarda en Orca un proyecto con 2 filamentos y ponlo en `datos/plantilla_orca.3mf`.
+
 ## Bajorrelieves: prueba de mapas de profundidad (fase 0)
 
 Primer paso para hacer monedas y medallones en relieve a partir de una foto: comparar cómo calcula la profundidad cada método con tus propias fotos, todo en tu ordenador.

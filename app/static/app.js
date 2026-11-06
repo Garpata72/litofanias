@@ -171,6 +171,7 @@ function rebuildSource() {
   src.height = Math.max(2, Math.round(crop.h * rotFull.height));
   src.getContext("2d").drawImage(rotFull, -cx, -cy);
   srcVersion++;
+  window.Color?.onSource();
 }
 function setCrop(c, save = true) {
   crop = { ...crop, ...c };
@@ -476,6 +477,7 @@ function select(meta) {
   $("#views").hidden = false;
   $("#btnStl").disabled = false;
   window.Relieve?.onSelect();
+  window.Color?.onSelect();
   frame = { zoom: 1, cx: 0.5, cy: 0.5, ...(store.get(`encuadre.${meta.id}`) || {}) };
   crop = { x: 0, y: 0, w: 1, h: 1, rot: 0, ...(store.get(`recorte.${meta.id}`) || {}) };
   srcVersion = 0;

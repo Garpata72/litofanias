@@ -17,16 +17,21 @@ const Relieve = (() => {
     $$("output[data-for^='r_']").forEach((o) => (o.textContent = Number($(`#${o.dataset.for}`).value).toFixed(2)));
   }
 
-  function setMode(relief) {
-    on = relief;
-    document.body.classList.toggle("modo-relieve", on);
-    $("#modeLito").setAttribute("aria-pressed", String(!on));
-    $("#modeRelieve").setAttribute("aria-pressed", String(on));
-    $("#btnStl").hidden = on;
+  /* Modo de la app: "lito", "relieve" o "color" (multicolor.js). */
+  function setMode(m) {
+    if (!["lito", "relieve", "color"].includes(m)) m = "lito";
+    on = m === "relieve";
+    for (const [k, id] of [["lito", "modeLito"], ["relieve", "modeRelieve"], ["color", "modeColor"]]) {
+      document.body.classList.toggle(`modo-${k}`, m === k);
+      $(`#${id}`).setAttribute("aria-pressed", String(m === k));
+    }
+    $("#btnStl").hidden = m !== "lito";
     $("#btnRelieve").hidden = !on;
     $("#btnRelieve").disabled = !current;
-    store.set("modo", on ? "relieve" : "lito");
+    $("#btnColor").hidden = m !== "color";
+    store.set("modo", m);
     if (on) loadModels();
+    window.Color?.onMode(m === "color");
   }
 
   /* ───────── Modelos de IA ───────── */
@@ -110,10 +115,11 @@ const Relieve = (() => {
     restore();
     refresh();
     for (const id of FIELDS) $(`#${id}`).addEventListener("input", () => { refresh(); save(); });
-    $("#modeLito").addEventListener("click", () => setMode(false));
-    $("#modeRelieve").addEventListener("click", () => setMode(true));
+    $("#modeLito").addEventListener("click", () => setMode("lito"));
+    $("#modeRelieve").addEventListener("click", () => setMode("relieve"));
+    $("#modeColor").addEventListener("click", () => setMode("color"));
     $("#btnRelieve").addEventListener("click", generate);
-    setMode(store.get("modo") === "relieve");
+    setMode(store.get("modo") || "lito");
   }
   init();
 

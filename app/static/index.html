@@ -18,6 +18,7 @@
   <div class="seg" role="group" aria-label="Qué crear" id="modeSeg">
     <button id="modeLito" type="button" class="segbtn" aria-pressed="true">Litofanía</button>
     <button id="modeRelieve" type="button" class="segbtn" aria-pressed="false">Bajorrelieve</button>
+    <button id="modeColor" type="button" class="segbtn" aria-pressed="false">Multicolor</button>
   </div>
   <span class="spacer"></span>
   <button id="btnView" class="btn" type="button" title="Abrir un STL o 3MF del ordenador en el visor 3D">
@@ -87,6 +88,87 @@
       <label class="num" data-r-hang><span>Agujero</span><input id="r_colgar_agujero" type="number" min="1" max="20" step="0.5" value="4"><i>mm</i></label>
       <label class="num"><span>Resolución</span><input id="r_resolucion" type="number" min="0.03" max="0.5" step="0.01" value="0.1"><i>mm/px</i></label>
       <p class="hint">Gira la foto con los botones ⟲ ⟳ de la vista «Original». Con la Ender 3 V3 KE, 0,1 mm/px y capas de 0,12 mm dan buen detalle; el archivo de ajustes de impresión (Orca, Bambu y Cura) se genera con la pieza.</p>
+    </div>
+
+    <div class="sidehead" data-modo="color"><span>Multicolor</span></div>
+    <div class="fields" data-modo="color">
+      <div class="seg wide" role="group" aria-label="Qué crear en color">
+        <button id="c_tipoFoto" type="button" class="segbtn" aria-pressed="true">Foto en color</button>
+        <button id="c_tipoPos" type="button" class="segbtn" aria-pressed="false">Posavasos</button>
+      </div>
+
+      <div data-c="foto">
+        <p class="hint">Foto en relieve de colores, como HueForge: capas finas y pocos cambios de filamento (M600). Se mira con luz normal, desde arriba. Ordena los filamentos de oscuro a claro; el primero es la base.</p>
+        <div id="c_fils" class="filrows"></div>
+        <div class="row2">
+          <label class="fsel"><span>Biblioteca</span><select id="c_biblio" aria-label="Añadir un filamento de la biblioteca"></select></label>
+          <button id="c_ordenar" class="btn small" type="button" title="Pone los filamentos de oscuro a claro">Ordenar</button>
+        </div>
+        <label class="num"><span>Ancho</span><input id="c_ancho" type="number" min="20" max="220" step="1" value="100"><i>mm</i></label>
+        <label class="fsel"><span>Forma</span>
+          <select id="c_contorno" aria-label="Forma de la pieza">
+            <option value="rectangulo">Rectángulo</option><option value="redondeado">Redondeado</option>
+            <option value="circulo">Círculo (posavasos)</option><option value="ovalo">Óvalo</option>
+            <option value="triangulo">Triángulo</option><option value="hexagono">Hexágono</option>
+          </select></label>
+        <label class="num" title="Muro alrededor que hace de molde para la resina UV"><span>Borde para resina (0 = sin borde)</span><input id="c_borde" type="number" min="0" max="10" step="0.5" value="0"><i>mm</i></label>
+        <label class="num" data-c-borde><span>Borde sobre el relieve</span><input id="c_borde_alto" type="number" min="0.2" max="4" step="0.1" value="0.8"><i>mm</i></label>
+        <label class="slider" title="Alto: conserva más los tonos (el fuego de un perro). Bajo: conserva más luces y sombras"><span>Peso del color</span><output data-for="c_peso"></output>
+          <input id="c_peso" type="range" min="0" max="6" step="0.25" value="2"></label>
+        <label class="slider"><span>Capas de relieve</span><output data-for="c_capas"></output>
+          <input id="c_capas" type="range" min="8" max="64" step="1" value="32"></label>
+        <label class="check"><input id="c_contraste" type="checkbox"> Realzar contraste (autocontraste)</label>
+        <label class="check"><input id="c_auto" type="checkbox" checked> Capas de cambio automáticas</label>
+        <div id="c_cambios" class="filrows"></div>
+        <details>
+          <summary>Capas y resolución</summary>
+          <label class="num"><span>Altura de capa</span><input id="c_capa" type="number" min="0.04" max="0.3" step="0.02" value="0.08"><i>mm</i></label>
+          <label class="num"><span>Primera capa</span><input id="c_primera" type="number" min="0.08" max="0.4" step="0.02" value="0.16"><i>mm</i></label>
+          <label class="num"><span>Capas de base</span><input id="c_base" type="number" min="1" max="30" step="1" value="4"><i></i></label>
+          <label class="num"><span>Resolución</span><input id="c_resolucion" type="number" min="0.1" max="1" step="0.05" value="0.25"><i>mm/px</i></label>
+        </details>
+        <p class="hint">El TD (mm a partir de los que un filamento ya no deja ver lo de debajo) es lo que más cambia el resultado real. Los de la biblioteca son aproximados: si conoces los de tus bobinas (HueForge los publica), cámbialos.</p>
+      </div>
+
+      <div data-c="posavasos">
+        <label class="fsel"><span>Forma</span>
+          <select id="p_forma" aria-label="Forma del posavasos">
+            <option value="redondo">Redondo</option><option value="cuadrado">Cuadrado</option><option value="triangulo">Triangular</option>
+            <option value="hexagono">Hexágono</option><option value="octogono">Octógono</option><option value="flor">Flor (borde ondulado)</option><option value="gota">Gota</option>
+          </select></label>
+        <label class="num"><span>Tamaño (ancho)</span><input id="p_tamano" type="number" min="50" max="200" step="1" value="100"><i>mm</i></label>
+        <label class="num" data-p-esq><span>Redondeo de esquinas</span><input id="p_esquinas" type="number" min="0" max="30" step="1" value="6"><i>mm</i></label>
+        <label class="fsel"><span>Modo</span>
+          <select id="p_modo" aria-label="Cómo se reparten los colores">
+            <option value="relieve">Relieve con borde para resina (cara de arriba)</option>
+            <option value="incrustado">Incrustado (cara lisa contra la cama)</option>
+          </select></label>
+        <label class="fsel"><span>Colores</span><select id="p_colores" aria-label="Número de colores"><option value="3">3</option><option value="2">2</option></select></label>
+        <div id="p_paleta" class="filrows"></div>
+        <label class="fsel"><span>Motivo</span>
+          <select id="p_motivo" aria-label="Motivo">
+            <option value="demo">Flor de ejemplo</option><option value="texto">Texto</option><option value="silueta">Silueta (máscara subida)</option>
+          </select></label>
+        <label class="textfield" data-p-mot="texto"><span>Texto (color 2)</span><input id="p_texto2" type="text" maxlength="40" value="CASA"></label>
+        <label class="textfield" data-p-mot="texto"><span>Texto pequeño (color 3)</span><input id="p_texto3" type="text" maxlength="40" value=""></label>
+        <label class="num" data-p-mot="texto"><span>Alto de las letras</span><input id="p_texto_mm" type="number" min="4" max="60" step="1" value="16"><i>mm</i></label>
+        <label class="fsel" data-p-mot="silueta"><span>Silueta del color 2</span><select id="p_mascara2"></select></label>
+        <label class="fsel" data-p-mot="silueta"><span>Silueta del color 3</span><select id="p_mascara3"></select></label>
+        <button class="btn small" type="button" id="p_subir" data-p-mot="silueta"><span data-icon="plus"></span> Subir silueta</button>
+        <input id="p_fichero" type="file" accept="image/*" hidden>
+        <label class="num" data-p-mot="silueta"><span>Ancho del motivo (0 = máximo)</span><input id="p_motivo_mm" type="number" min="0" max="200" step="1" value="0"><i>mm</i></label>
+        <details>
+          <summary>Grosores y borde</summary>
+          <label class="num"><span>Grosor de la base</span><input id="p_grosor" type="number" min="2" max="10" step="0.2" value="4"><i>mm</i></label>
+          <label class="num"><span>Margen sin motivo</span><input id="p_margen" type="number" min="0" max="30" step="0.5" value="5"><i>mm</i></label>
+          <label class="num" data-p-rel><span>Alto del motivo (color 2)</span><input id="p_alto2" type="number" min="0.4" max="4" step="0.2" value="1"><i>mm</i></label>
+          <label class="num" data-p-rel><span>Alto del detalle (color 3)</span><input id="p_alto3" type="number" min="0.4" max="4" step="0.2" value="0.8"><i>mm</i></label>
+          <label class="num" data-p-rel><span>Ancho del borde (0 = sin borde)</span><input id="p_borde" type="number" min="0" max="10" step="0.5" value="3"><i>mm</i></label>
+          <label class="num" data-p-rel><span>Resina sobre el motivo</span><input id="p_borde_alto" type="number" min="0" max="3" step="0.2" value="0.6"><i>mm</i></label>
+          <label class="fsel" data-p-inc><span>Grosor del color incrustado</span><select id="p_incrustacion"><option value="0.3">0,3 mm (1 capa mixta)</option><option value="0.5">0,5 mm (más opaco, 2 capas mixtas)</option></select></label>
+        </details>
+        <p class="hint">Relieve: cada color en su franja de altura, sin capas mixtas; el borde hace de molde y la resina UV deja la cara lisa y brillante. Incrustado: la cara vista va contra la cama, boca abajo y con el motivo en espejo.</p>
+      </div>
     </div>
 
     <div class="sidehead" data-modo="lito"><span>Varias fotos en una pieza</span></div>
@@ -255,6 +337,7 @@
       <p id="summary" aria-live="polite"></p>
       <button id="btnStl" class="btn primary" type="button" disabled><span data-icon="cube"></span> Generar y ver en 3D</button>
       <button id="btnRelieve" class="btn primary" type="button" disabled hidden><span data-icon="cube"></span> Generar bajorrelieve</button>
+      <button id="btnColor" class="btn primary" type="button" disabled hidden><span data-icon="cube"></span> Generar en color</button>
     </div>
     <div id="empty" class="empty">
       <span data-icon="upload"></span>
@@ -279,6 +362,16 @@
         <figcaption>Profundidad <span class="mute">(lo claro está cerca)</span></figcaption>
         <div class="stage"><img id="imgProf" alt="Mapa de profundidad"></div>
       </figure>
+      <figure class="view" data-modo="color">
+        <figcaption class="withtools"><span id="capColor">Vista previa <span class="mute">(como quedará impresa)</span></span>
+          <span class="tools">
+            <button id="c_sombra" class="chip" type="button" aria-pressed="true" title="Sombrear el relieve con luz rasante">Relieve</button>
+            <button id="c_resina" class="chip" type="button" aria-pressed="false" title="Simular el brillo de la capa de resina UV">Resina</button>
+          </span></figcaption>
+        <div class="stage"><canvas id="cvColor" aria-label="Vista previa en color"></canvas></div>
+        <canvas id="cvStack" class="stackbar" height="26" aria-label="Pila de colores por capa"></canvas>
+        <p id="colorInfo" class="hint"></p>
+      </figure>
       <figure class="view" data-modo="lito">
         <figcaption>A contraluz <span class="mute">(simulación)</span></figcaption>
         <div class="stage lit"><canvas id="cvLit" aria-label="Simulación de la litofanía iluminada"></canvas></div>
@@ -294,6 +387,7 @@
     <div class="seg" role="group" aria-label="Iluminación">
       <button id="mRelief" type="button" class="segbtn" aria-pressed="true" title="Luz frontal: se ve el relieve (R)">Relieve</button>
       <button id="mLit" type="button" class="segbtn" aria-pressed="false" title="Luz por detrás: cómo se verá encendida (L)">Contraluz</button>
+      <button id="mColor" type="button" class="segbtn" aria-pressed="false" title="Con los colores de los filamentos (C)" hidden>Color</button>
     </div>
     <button id="lbFit" class="iconbtn" data-icon="fit" title="Volver a encuadrar (F)" aria-label="Volver a encuadrar"></button>
     <a id="lbSettings" class="btn small" download title="Ajustes recomendados para imprimir esta pieza en la Ender 3 V3 KE"><span data-icon="doc"></span> Ajustes de impresión</a>
@@ -319,5 +413,6 @@
 <script type="module" src="/viewer.js"></script>
 <script src="/app.js"></script>
 <script src="/relieve.js"></script>
+<script src="/multicolor.js"></script>
 </body>
 </html>

@@ -213,9 +213,28 @@ body.side-hidden #side { display: none; }
 }
 #collageList button { background-size: cover; }
 
-/* Modo bajorrelieve: se esconde lo propio de las litofanías y al revés */
-body.modo-relieve [data-modo="lito"] { display: none !important; }
+/* Modos (litofanía, bajorrelieve, multicolor): cada uno esconde lo de los demás */
+body:not(.modo-lito) [data-modo="lito"] { display: none !important; }
 body:not(.modo-relieve) [data-modo="relieve"] { display: none !important; }
+body:not(.modo-color) [data-modo="color"] { display: none !important; }
+body.color-pos [data-c="foto"], body:not(.color-pos) [data-c="posavasos"] { display: none !important; }
+body.modo-color #summary { visibility: hidden; }
+body.modo-color.color-pos #views > .view:first-child { display: none; }
+.seg.wide { display: flex; } .seg.wide .segbtn { flex: 1; }
+[data-c] { display: flex; flex-direction: column; gap: .55rem; }
+.filrows { display: flex; flex-direction: column; gap: .35rem; }
+.filrow { display: grid; grid-template-columns: 2.1rem 1fr 4.2rem 1.7rem; gap: .3rem; align-items: center; font-size: .82rem; }
+.filrow.pal { grid-template-columns: 2.1rem 1fr; }
+.filrow.chg { grid-template-columns: 1fr 4.2rem; }
+.filrow input[type="color"] { width: 2.1rem; height: 1.8rem; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: none; }
+.filrow input[type="text"], .filrow input[type="number"] {
+  width: 100%; background: var(--bed); border: 1px solid var(--line); border-radius: var(--r); padding: .25rem .4rem; color: var(--text);
+}
+.filrow .iconbtn { width: 1.7rem; height: 1.7rem; }
+.row2 { display: grid; grid-template-columns: 1fr auto; gap: .4rem; align-items: center; }
+details { font-size: .88rem; } details > summary { cursor: pointer; color: var(--mute); margin-bottom: .45rem; }
+details > label { margin-bottom: .45rem; }
+.stackbar { display: block; width: 100%; height: 26px; margin-top: .5rem; border-radius: var(--r); }
 #modeSeg { margin-left: 1rem; }
 .modelrow { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; font-size: .82rem; }
 .modelrow > span { flex: 1 1 10rem; }
