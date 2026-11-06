@@ -725,6 +725,11 @@ def delete_preset(nombre: str) -> dict:
     return {"ok": True}
 
 
+from app.multicolor import router as multicolor_router  # noqa: E402
+
+app.include_router(multicolor_router)
+
+
 @app.middleware("http")
 async def no_cache(request, call_next):
     # Que el navegador vuelva a pedir la interfaz tras actualizar la app en vez de usar una copia vieja.

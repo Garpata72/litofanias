@@ -1,5 +1,5 @@
 /* Litofanías — visor 3D de STL y 3MF. three.js va incluido en /vendor: no necesita internet.
-   Dos luces: «Relieve» (luz frontal, se ve la superficie) y «Contraluz» (simula la pieza encendida:
+   Luces: «Color» (piezas multicolor), «Relieve» (luz frontal, se ve la superficie) y «Contraluz» (simula la pieza encendida:
    la luz que pasa decae con el grosor, medido como altura sobre la cara trasera). */
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/three/examples/jsm/controls/OrbitControls.js";
@@ -110,11 +110,25 @@ function loop() {
 }
 
 function setMode(m) {
+  if (m === "color" && !current?.colored) m = "relief";
   mode = m;
   $("#mRelief").setAttribute("aria-pressed", m === "relief");
   $("#mLit").setAttribute("aria-pressed", m === "lit");
+  $("#mColor").setAttribute("aria-pressed", m === "color");
   scene.background = new THREE.Color(m === "lit" ? 0x07090b : 0x1a1f26);
-  root?.traverse((o) => { if (o.isMesh) o.material = m === "lit" ? litMat : reliefMat; });
+  root?.traverse((o) => { if (o.isMesh) o.material = m === "lit" ? litMat : m === "color" ? (o.userData.colorMat || reliefMat) : reliefMat; });
+}
+
+/* Multicolor: el color de cada vértice sale de su altura (capas de la foto en color, como la vista previa). */
+function paintLayers(mesh, layers) {
+  const pos = mesh.geometry.attributes.position, cols = new Float32Array(pos.count * 3);
+  const pal = layers.colores.map((h) => new THREE.Color(h).convertSRGBToLinear());
+  for (let i = 0; i < pos.count; i++) {
+    const k = Math.min(pal.length - 1, Math.max(0, Math.round((pos.getZ(i) - layers.z0) / layers.h)));
+    cols[3 * i] = pal[k].r; cols[3 * i + 1] = pal[k].g; cols[3 * i + 2] = pal[k].b;
+  }
+  mesh.geometry.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+  mesh.userData.colorMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0, side: THREE.DoubleSide });
 }
 
 function fit() {
@@ -207,7 +221,21 @@ function place(obj, radius, sphere, rIn, lamp, tMax, sides) {
   return { size: b.getSize(new THREE.Vector3()), triangles };
 }
 
-async function load({ url, file }) {
+async function load({ url, file, parts, colorLayers }) {
+  if (parts) {   // posavasos: una STL por color
+    const group = new THREE.Group();
+    for (const p of parts) {
+      const mesh = new THREE.Mesh(new STLLoader().parse(await (await fetch(p.url)).arrayBuffer()), reliefMat);
+      mesh.userData.colorMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(p.color), roughness: 0.55, metalness: 0, side: THREE.DoubleSide });
+      group.add(mesh);
+    }
+    return group;
+  }
+  if (colorLayers) {
+    const mesh = new THREE.Mesh(new STLLoader().parse(await (await fetch(url)).arrayBuffer()), reliefMat);
+    paintLayers(mesh, colorLayers);
+    return mesh;
+  }
   const isMF = (file?.name || url).toLowerCase().includes(".3mf");
   const data = file ? await file.arrayBuffer() : await (await fetch(url)).arrayBuffer();
   if (isMF) return new ThreeMFLoader().parse(data);
@@ -215,7 +243,9 @@ async function load({ url, file }) {
 }
 
 async function open(opts) {
-  current = opts;
+  current = { ...opts, colored: !!(opts.parts || opts.colorLayers) };
+  opts = current;
+  $("#mColor").hidden = !current.colored;
   $("#lb").hidden = false;
   $("#lbName").textContent = opts.name || "Modelo 3D";
   $("#lbInfo").textContent = opts.details || "";
@@ -225,6 +255,9 @@ async function open(opts) {
   const mf = $("#lbDownload3mf");
   mf.hidden = !opts.download3mf;
   if (opts.download3mf) mf.href = opts.download3mf;
+  const zp = $("#lbDownloadZip");
+  zp.hidden = !opts.downloadZip;
+  if (opts.downloadZip) zp.href = opts.downloadZip;
   const st = $("#lbSettings");
   st.hidden = !opts.settings;
   if (opts.settings) st.href = opts.settings;
@@ -260,6 +293,7 @@ function close() {
 
 $("#mRelief").addEventListener("click", () => setMode("relief"));
 $("#mLit").addEventListener("click", () => setMode("lit"));
+$("#mColor").addEventListener("click", () => setMode("color"));
 $("#lbFit").addEventListener("click", fit);
 $("#lbClose").addEventListener("click", close);
 addEventListener("keydown", (e) => {
@@ -267,6 +301,7 @@ addEventListener("keydown", (e) => {
   if (e.key === "Escape") close();
   else if (e.key === "r" || e.key === "R") setMode("relief");
   else if (e.key === "l" || e.key === "L") setMode("lit");
+  else if (e.key === "c" || e.key === "C") setMode("color");
   else if (e.key === "f" || e.key === "F") fit();
 });
 
