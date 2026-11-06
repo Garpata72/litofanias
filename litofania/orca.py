@@ -93,7 +93,10 @@ def write_project(path: str, parts: list[tuple[str, int, np.ndarray, np.ndarray]
     config = _adjust_config(json.loads(zin.read("Metadata/project_settings.config")), colors, layer, first)
     for k, v in (overrides or {}).items():
         old = config.get(k)
-        config[k] = [v] * len(old) if isinstance(old, list) else v
+        config[k] = v if isinstance(v, list) else [v] * len(old) if isinstance(old, list) else v
+    # Orden de los filamentos en la primera capa (Orca: «Secuencia de filamentos de la primera capa»).
+    first_seq = config.get("first_layer_print_sequence")
+    seq_value = " ".join(str(x) for x in first_seq) if first_seq and first_seq != ["0"] else ""
     main = zin.read("3D/3dmodel.model").decode("utf-8")
     # Las etiquetas Application y OrcaSlicer hacen que Orca lo abra como proyecto propio.
     meta = "\n".join(line for line in main.splitlines() if line.strip().startswith("<metadata"))
@@ -108,6 +111,8 @@ def write_project(path: str, parts: list[tuple[str, int, np.ndarray, np.ndarray]
             line = re.sub(r'(key="filament_maps" value=")[^"]*', lambda m: m.group(1) + " ".join(["1"] * n), line)
             line = re.sub(r'(key="filament_volume_maps" value=")[^"]*', lambda m: m.group(1) + " ".join(["0"] * n), line)
             lines.append(line)
+        if seq_value:
+            lines.append(f'    <metadata key="first_layer_print_sequence" value="{seq_value}"/>')
         plate_meta = "\n".join(lines)
 
     parts = [(n, e, np.asarray(v, float), np.asarray(t, int)) for n, e, v, t in parts]
