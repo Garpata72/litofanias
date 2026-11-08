@@ -19,6 +19,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from app import storage
+from app.imanes import router as imanes_router
 from litofania.contours import prepare_mask
 from litofania.collage import MAX_PHOTOS, Photo
 from litofania.generate import generate, generate_sphere
@@ -42,6 +43,7 @@ PREVIEW_TRIANGLES = 700_000
 app = FastAPI(title="Litofanías")
 storage.ensure_dirs()
 SERVER = None  # lo pone run.py para poder cerrar la app desde el botón de apagado
+app.include_router(imanes_router)   # imanes de nevera: hoja de fotos en PDF y útiles
 
 
 class CollageItem(BaseModel):
