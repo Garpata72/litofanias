@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Litofanías</title>
 <link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/imanes.css">
+<script src="/imanes.js" defer></script>
 <link rel="icon" href="/icono.png">
 </head>
 <body>
@@ -246,6 +248,59 @@
       <button id="btnAcc" class="btn" type="button" disabled><span data-icon="lamp"></span> <span id="accLabel">Generar caja de luz</span></button>
       <p class="hint">Con hueco para una luz LED USB de 5 V y paso para el cable. Se ajusta a la última litofanía generada. El aro para casquillo encaja en el canto de arriba de la lámpara; usa bombillas LED, que se calientan poco.</p>
     </div>
+    <div class="sidehead" data-modo="iman"><span>Imanes de nevera</span><button id="m_reset" class="iconbtn" data-icon="refresh" title="Volver a las medidas del kit (50 mm, radio 4, cruces a 35 mm)" aria-label="Volver a las medidas del kit"></button></div>
+    <div class="fields" data-modo="iman">
+      <p class="hint">Hoja de fotos para los imanes de acrílico: cada foto con sangrado, línea de corte y dos cruces que se pinchan en los pines de la base de corte. Encuadra cada foto en su cuadrado.</p>
+      <label class="fsel"><span>Papel</span>
+        <select id="m_papelsel" aria-label="Tamaño del papel">
+          <option value="a4">A4 (21 × 29,7)</option>
+          <option value="10x15">10 × 15 cm</option>
+          <option value="13x18">13 × 18 cm</option>
+          <option value="15x20">15 × 20 cm</option>
+        </select></label>
+      <p id="m_fit" class="mfit" aria-live="polite"></p>
+      <label class="num"><span>Lado del imán</span><input id="m_lado" type="number" min="15" max="150" step="1" value="50"><i>mm</i></label>
+      <label class="num"><span>Radio de las esquinas</span><input id="m_radio" type="number" min="0" max="75" step="0.5" value="4"><i>mm</i></label>
+      <label class="num" title="Del centro de la foto a cada cruz. Es la misma distancia que la de los pines de la base de corte: vacío = lado/2 + 10"><span>Cruces y pines desde el centro</span><input id="m_sep" type="number" min="10" max="140" step="0.5" placeholder="35"><i>mm</i></label>
+      <p class="hint">Lado, radio y cruces son los mismos para el PDF y para los útiles: si cambias el tamaño, vuelve a imprimir también la base y el marco de corte.</p>
+    </div>
+
+    <div class="sidehead" data-modo="iman"><span>Fotos de la hoja</span></div>
+    <div class="fields" data-modo="iman">
+      <div id="m_list" class="mlist"></div>
+      <div class="mbtns">
+        <button id="m_add" class="btn small" type="button" title="Subir varias fotos a la vez (también puedes arrastrarlas a la ventana)"><span data-icon="plus"></span> Añadir fotos</button>
+      </div>
+      <input id="m_files" type="file" accept="image/*" multiple hidden>
+      <p class="hint">También puedes tocar una imagen de la lista de arriba para añadirla. El número es cuántas copias de cada foto van en el PDF.</p>
+      <label class="check" title="Completa la última hoja repitiendo las fotos en orden"><input id="m_rellenar" type="checkbox"> Rellenar la hoja repitiendo las fotos</label>
+      <button id="m_pdf" class="btn primary" type="button"><span data-icon="download"></span> Descargar PDF</button>
+      <button id="m_blank" class="btn small" type="button" title="Solo las líneas de corte y las cruces: para probar los útiles antes de gastar papel fotográfico"><span data-icon="doc"></span> Hoja sin fotos (prueba)</button>
+      <p class="hint">Imprime al 100 % (tamaño real, sin «ajustar a la página») y comprueba la regla de 50 mm. La foto va al derecho: se ve a través del acrílico. Se avisa cuando una foto queda por debajo de 300 ppp.</p>
+    </div>
+
+    <div class="sidehead" data-modo="iman"><span>Útiles de corte y montaje</span></div>
+    <div class="fields" data-modo="iman">
+      <details>
+        <summary>Medidas del kit y holguras</summary>
+        <label class="num"><span>Grosor del acrílico</span><input id="m_acrilico" type="number" min="0.5" max="10" step="0.1" value="3"><i>mm</i></label>
+        <label class="num"><span>Papel y cinta</span><input id="m_papel" type="number" min="0.05" max="2" step="0.05" value="0.25"><i>mm</i></label>
+        <label class="num"><span>Lámina magnética</span><input id="m_iman" type="number" min="0.2" max="5" step="0.1" value="0.8"><i>mm</i></label>
+        <label class="num" title="Juego del hueco de montaje, por lado"><span>Holgura del hueco</span><input id="m_holgura" type="number" min="0" max="1.5" step="0.05" value="0.3"><i>mm</i></label>
+        <label class="num" title="La foto queda este tanto más pequeña por lado que el acrílico"><span>Margen de corte</span><input id="m_margen" type="number" min="0" max="1.5" step="0.05" value="0.2"><i>mm</i></label>
+        <p class="hint">Son medidas estimadas: mide tu kit con un calibre.</p>
+      </details>
+      <button id="m_view3d" class="btn" type="button"><span data-icon="cube"></span> Ver los útiles en 3D</button>
+      <div class="mdl">
+        <a id="m_stl_base" class="btn small" download><span data-icon="download"></span> Base de corte</a>
+        <a id="m_stl_marco" class="btn small" download><span data-icon="download"></span> Marco de corte</a>
+        <a id="m_stl_montaje" class="btn small" download><span data-icon="download"></span> Montaje</a>
+        <a id="m_3mf" class="btn small" download title="Las tres piezas en un 3MF"><span data-icon="download"></span> 3MF</a>
+        <a id="m_scad" class="btn small" download title="Plantilla de OpenSCAD con estas medidas"><span data-icon="doc"></span> .scad</a>
+        <a id="m_txt" class="btn small" download title="Medidas, impresión y uso de los útiles"><span data-icon="doc"></span> Instrucciones</a>
+      </div>
+      <p class="hint">PLA, capa de 0,2 mm, sin soportes. Base y marco: pincha las cruces en los pines, pon el marco encima y corta por dentro de la ventana.</p>
+    </div>
   </aside>
   <div id="scrim"></div>
 
@@ -282,6 +337,28 @@
       <figure class="view" data-modo="lito">
         <figcaption>A contraluz <span class="mute">(simulación)</span></figcaption>
         <div class="stage lit"><canvas id="cvLit" aria-label="Simulación de la litofanía iluminada"></canvas></div>
+      </figure>
+      <figure class="view" data-modo="iman">
+        <figcaption class="withtools"><span id="m_capFrame">Encuadre</span>
+          <span class="tools">
+            <button id="m_rotL" class="chip" type="button" title="Girar la foto a la izquierda">⟲</button>
+            <button id="m_rotR" class="chip" type="button" title="Girar la foto a la derecha">⟳</button>
+            <button id="m_center" class="chip" type="button" title="Foto centrada y sin zoom">Centrar</button>
+          </span></figcaption>
+        <div class="stage mstage"><canvas id="m_cv" class="movable" width="560" height="560" aria-label="Encuadre de la foto del imán: arrastra para moverla, rueda para acercar"></canvas></div>
+        <label class="slider mzoom"><span>Zoom</span><output id="m_zoomOut"></output>
+          <input id="m_zoom" type="range" min="1" max="6" step="0.01" value="1"></label>
+        <p id="m_res" class="hint"></p>
+      </figure>
+      <figure class="view" data-modo="iman">
+        <figcaption class="withtools"><span id="m_capSheet">Hoja</span>
+          <span class="tools">
+            <button id="m_prevPage" class="chip" type="button" title="Hoja anterior">‹</button>
+            <button id="m_nextPage" class="chip" type="button" title="Hoja siguiente">›</button>
+          </span></figcaption>
+        <div class="stage"><canvas id="m_sheet" aria-label="Vista de la hoja que se imprimirá: toca una foto para encuadrarla"></canvas></div>
+        <p class="hint">Toca una foto de la hoja para encuadrarla. Así quedará el imán:</p>
+        <div class="mprev"><canvas id="m_magnet" width="180" height="180" aria-label="Vista del imán terminado"></canvas></div>
       </figure>
     </section>
   </main>

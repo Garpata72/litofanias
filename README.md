@@ -36,6 +36,15 @@ Puerto por defecto: **8040** (8000, 8010 y 8020 los usan otras apps).
    Con **Plantillas** guardas los ajustes con un nombre (se guardan en `datos/plantillas.json`) y los recuperas con un clic.
 4. En el visor 3D gira la pieza, cambia entre **Relieve** (luz frontal) y **Contraluz** (cómo se verá encendida) y pulsa **Descargar STL** cuando te guste. **Ajustes de impresión** descarga un texto con la configuración recomendada para la Ender 3 V3 KE (orientación, capa, relleno, soportes) y el filamento aproximado.
 
+## Imán de nevera
+
+El modo **Imán de nevera** (arriba, junto a Litofanía y Bajorrelieve) prepara la hoja de fotos para los imanes de acrílico «hazlo tú mismo» (50 × 50 mm con esquinas redondeadas por defecto) y los útiles para cortarlas y montarlas.
+
+1. **Añadir fotos** (varias a la vez, o arrastrándolas, o tocando una de la lista de imágenes). En **Encuadre** se arrastra la foto y se hace zoom dentro del cuadrado; la línea discontinua es el corte y lo de fuera es el sangrado de 2 mm. Cada foto tiene sus **copias**, y **Rellenar la hoja** completa la última hoja repitiendo las fotos.
+2. Elige el **papel**: A4, 10 × 15, 13 × 18 o 15 × 20. La app prueba las dos orientaciones y dice cuántos imanes caben (con el imán de 50 mm: 10, 2, 4 y 4), y avisa en rojo si el imán no cabe en ese papel. Lleva una regla de control de 50 mm cuando cabe.
+3. **Descargar PDF**: las fotos van a su resolución original (hasta 1200 ppp; las JPEG se guardan a calidad 95 sin submuestrear el color) y se avisa de las que quedan por debajo de 300 ppp al tamaño impreso. Imprime al 100 % (tamaño real) y comprueba la regla. **Hoja sin fotos** sirve para probar los útiles.
+4. **Útiles de corte y montaje**: base de corte con dos pines, marco de corte y plantilla de montaje, en STL, 3MF o `.scad`, con las mismas medidas que el PDF (lado, radio y distancia de las cruces a los pines). Las medidas del kit (grosores y holguras) son estimadas: mídelo y ajústalas.
+
 Con **Ver STL / 3MF** (o arrastrando el archivo a la ventana) puedes abrir cualquier STL o 3MF de tu ordenador en el mismo visor. El visor usa three.js, incluido en `app/static/vendor/three` (licencia MIT), así que funciona sin internet.
 
 Las imágenes y los STL se guardan en `datos/`, junto a la app (se puede cambiar con la variable `LITOFANIAS_DATOS`).

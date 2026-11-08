@@ -1,0 +1,33 @@
+/* Imanes de nevera: modo propio que esconde lo de los demás modos. */
+body:not(.modo-iman) [data-modo="iman"] { display: none !important; }
+body.modo-iman [data-modo]:not([data-modo="iman"]) { display: none !important; }
+body.modo-iman #views > .view:not([data-modo="iman"]) { display: none !important; }
+body.modo-iman .bar > .btn { display: none !important; }
+
+.mfit { margin: 0; font-size: .82rem; color: var(--amber-hi); }
+.mfit.bad { color: var(--coral); font-weight: 600; }
+.mbtns, .mdl { display: flex; flex-wrap: wrap; gap: .35rem; }
+.mlist { display: flex; flex-direction: column; gap: .3rem; }
+.mlist .none { color: var(--mute); font-size: .82rem; }
+.mrow {
+  display: grid; grid-template-columns: 2.6rem 1fr 3.4rem 1.6rem; gap: .4rem; align-items: center; padding: .2rem;
+  border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--bed); font-size: .8rem; cursor: pointer;
+}
+.mrow:hover { border-color: var(--line-hi); }
+.mrow.sel { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+.mrow .th { width: 2.6rem; height: 2.6rem; border-radius: 6px; background: #000 center/cover no-repeat; }
+.mrow .nm { min-width: 0; display: flex; flex-direction: column; }
+.mrow .nm span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrow .nm small { color: var(--mute); }
+.mrow .nm small.low { color: var(--coral); font-weight: 600; }
+.mrow input {
+  width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: .2rem .3rem; color: var(--text); text-align: center;
+}
+.mrow .iconbtn { width: 1.6rem; height: 1.6rem; font-size: .85rem; }
+.mstage { padding: .5rem; }
+.mstage canvas, #m_sheet { width: 100%; height: auto; max-width: 560px; }
+#m_sheet { max-width: 520px; cursor: pointer; }
+.mzoom { margin-top: .6rem; }
+#m_res.low { color: var(--coral); font-weight: 600; }
+.mprev { display: grid; place-items: center; padding: .6rem; border-radius: var(--r); background: #e9edf0; margin-top: .4rem; }
+.mdl a.off { pointer-events: none; opacity: .45; }
